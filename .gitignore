@@ -1,0 +1,26 @@
+# Ignore data directory containing databases and CSV files
+data/
+
+# Go specific ignores
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# IDE specific files
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
