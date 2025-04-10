@@ -1,4 +1,4 @@
-# Flare Database Management Tool
+# FLARE - Lattice Encryption Framework
 
 ## Overview
 
@@ -28,6 +28,23 @@ Flare is a database management toolkit focused on SQLite operations, providing t
 - Support for complex encryption parameters
 - Full encryption and decryption of database records
 
+## Project Structure
+
+The project has been reorganized into a modular structure:
+
+```
+/Users/santhoshcheemala/ALL_IN_ONE/Research_Implimentation/Flare/
+├── cmd/
+│   └── flare/          # Command-line application
+│       └── main.go     # Application entry point
+├── internal/
+│   ├── crypto/         # Encryption functionality
+│   ├── storage/        # Database operations
+│   └── utils/          # Utility functions
+└── pkg/
+    └── le/             # Reusable Lattice Encryption package
+```
+
 ## Usage
 
 ### Basic Database Operations
@@ -55,3 +72,15 @@ go run main.go -input=data/encrypted.db -output=data/decrypted.db -columns=id,am
 ```
 # Convert CSV to SQL
 go run csv2sql.go -f data/transactions.csv -t financial_transactions
+```
+
+## Running the Application
+
+To run the application:
+
+```bash
+cd /Users/santhoshcheemala/ALL_IN_ONE/Research_Implimentation/Flare
+go run cmd/flare/main.go -columns=type,amount,nameDest -encrypt -output=data/encrypted.db
+```
+
+Use the `-list-columns` flag to see available columns in the source database.

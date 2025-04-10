@@ -1,10 +1,11 @@
 package LE
 
 import (
+	"math"
+
+	"github.com/SanthoshCheemala/FLARE.git/matrix"
 	"github.com/tuneinsight/lattigo/v3/ring"
 	"github.com/tuneinsight/lattigo/v3/utils"
-	"lattice-LE-go/matrix"
-	"math"
 )
 
 type LE struct {

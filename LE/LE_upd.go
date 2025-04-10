@@ -2,11 +2,12 @@ package LE
 
 import (
 	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/tuneinsight/lattigo/v3/ring"
-	"lattice-LE-go/matrix"
 	"strconv"
 	"sync"
+
+	"github.com/SanthoshCheemala/FLARE.git/matrix"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/tuneinsight/lattigo/v3/ring"
 )
 
 /*

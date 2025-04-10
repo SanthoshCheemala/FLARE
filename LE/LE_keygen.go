@@ -1,6 +1,6 @@
 package LE
 
-import "lattice-LE-go/matrix"
+import "github.com/SanthoshCheemala/FLARE.git/matrix"
 
 /*
 KeyGen this is the KGen algorithm
