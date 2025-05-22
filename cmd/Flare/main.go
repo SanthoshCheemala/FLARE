@@ -72,5 +72,8 @@ func getMode(encrypt, decrypt bool) string {
 
 func processData(columns, mergedColumns []string, encrypt, decrypt bool, limit int) {
 	db := storage.OpenDatabase("data/transactions.db")
-	storage.DisplayColumns(db,"finanical_transactions",columns,limit)
+	data := storage.RetriveData(db,"finanical_transactions",columns,mergedColumns,limit)
+	for _,v := range data{
+		fmt.Println(v)
+	}
 }

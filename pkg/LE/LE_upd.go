@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/SanthoshCheemala/FLARE.git/matrix"
+	"github.com/SanthoshCheemala/FLARE.git/pkg/matrix"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tuneinsight/lattigo/v3/ring"
 )
