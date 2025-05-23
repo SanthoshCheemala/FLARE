@@ -3,9 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/SanthoshCheemala/FLARE.git/internal/crypto"
 	"github.com/SanthoshCheemala/FLARE.git/internal/storage"
 )
 
@@ -76,4 +79,12 @@ func processData(columns, mergedColumns []string, encrypt, decrypt bool, limit i
 	for _,v := range data{
 		fmt.Println(v)
 	}
+	start := time.Now()
+	leParams,err := crypto.SetupLEParameters()
+	end := time.Now()
+	if err != nil{
+		log.Fatal(err)
+	}
+	setUpTime := end.Sub(start)
+	
 }
