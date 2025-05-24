@@ -2,7 +2,7 @@ package crypto
 
 import (
 	"github.com/tuneinsight/lattigo/v3/ring"
-	"github.com/SanthoshCheemala/FLARE.git/matrix"
+	// "github.com/SanthoshCheemala/FLARE.git/pkg/matrix"
 )
 
 func StringToPoly(s string,r *ring.Ring) *ring.Poly{
@@ -15,6 +15,7 @@ func StringToPoly(s string,r *ring.Ring) *ring.Poly{
 	}
 	return poly
 }
+
 
 
 
