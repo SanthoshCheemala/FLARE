@@ -9,7 +9,6 @@ import (
 
 	"github.com/SanthoshCheemala/FLARE.git/internal/storage"
 	"github.com/tuneinsight/lattigo/v3/ring"
-	"golang.org/x/tools/go/analysis/unitchecker"
 )
 
 
@@ -92,15 +91,16 @@ func EncryptTransactions(transactions []storage.Transaction,columns []string,Tre
 					EncryptedStr = fmt.Sprintf("PLAIN_%s",dataStr)
 					errorCount++;
 				} else {
-					
+					EncryptedStr = SerilizeEncryption(dBytes)
+					successCount++;
 				}
 			}
+			encryptedTrans.Data[col] = EncryptedStr
 
 		}
-
+		encryptTransactions[i] = encryptedTrans
 	}
-
-
-
-
+		fmt.Printf("Performed Encrypted Transactions with successfull encryptions: %d, Errors: %d",successCount,errorCount)
+		fmt.Println("All transactions are Proccessed")
+		return encryptTransactions,nil
 }

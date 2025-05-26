@@ -8,8 +8,8 @@ import (
 
 func SetupLEParameters()(*LE.LE,error){
 	Q := uint64(180143985094819841)
-	qBits := 8
-	D := 512
+	qBits := 16
+	D := 128
 	N := 4
 
 	var leParams *LE.LE

@@ -76,15 +76,28 @@ func getMode(encrypt, decrypt bool) string {
 func processData(columns, mergedColumns []string, encrypt, decrypt bool, limit int) {
 	db := storage.OpenDatabase("data/transactions.db")
 	data := storage.RetriveData(db,"finanical_transactions",columns,mergedColumns,limit)
-	for _,v := range data{
-		fmt.Println(v)
-	}
+	var UnEncryptedData []byte
 	start := time.Now()
-	leParams,err := crypto.SetupLEParameters()
-	end := time.Now()
+	ecnryptedTransactions,err  := crypto.EncryptTransactions(data,columns,"data/tree.db","data/secret.bin")
 	if err != nil{
 		log.Fatal(err)
 	}
-	setUpTime := end.Sub(start)
+	end := time.Now()
+	totalTime := end.Sub(start)
+	var EncryptedData []byte
+	fmt.Println("Total Time to Encrypt the data is ",totalTime)
+	for _,v := range data{
+		fmt.Println(v)
+		for _,c := range v.Data["amount"]{
+			UnEncryptedData = append(UnEncryptedData,byte(c))
+		}
+	}
+	for _,v := range ecnryptedTransactions{
+		fmt.Println(v.Data["amount"])
+		for _,c := range v.Data["amount"]{
+			EncryptedData = append(EncryptedData, byte(c))
+		}
+	}
+	fmt.Println(len(UnEncryptedData),"/",len(EncryptedData))
 	
 }

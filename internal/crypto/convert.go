@@ -1,6 +1,9 @@
 package crypto
 
 import (
+	"encoding/base64"
+	"fmt"
+
 	"github.com/tuneinsight/lattigo/v3/ring"
 	// "github.com/SanthoshCheemala/FLARE.git/pkg/matrix"
 )
@@ -16,6 +19,16 @@ func StringToPoly(s string,r *ring.Ring) *ring.Poly{
 	return poly
 }
 
+func SerilizeEncryption(dBytes []byte) string{
+	fmt.Println("\nEncryption-----------",len(dBytes))
+	checkSum := uint32(0)
+	for _,b := range dBytes{
+		checkSum += uint32(b)
+	}
+	encodedData := base64.StdEncoding.EncodeToString(dBytes)
+	encryptedStr := fmt.Sprintf("LE_ENCv1_%d_%s",checkSum,encodedData)
+	return encryptedStr
+}
 
 
 
