@@ -76,28 +76,29 @@ func getMode(encrypt, decrypt bool) string {
 func processData(columns, mergedColumns []string, encrypt, decrypt bool, limit int) {
 	db := storage.OpenDatabase("data/transactions.db")
 	data := storage.RetriveData(db,"finanical_transactions",columns,mergedColumns,limit)
-	var UnEncryptedData []byte
+	// var UnEncryptedData []byte
 	start := time.Now()
-	ecnryptedTransactions,err  := crypto.EncryptTransactions(data,columns,"data/tree.db","data/secret.bin")
+	_,mergeTrans,err  := crypto.EncryptTransactions(data,columns,"data/tree.db","data/secret.bin")
 	if err != nil{
 		log.Fatal(err)
 	}
 	end := time.Now()
 	totalTime := end.Sub(start)
-	var EncryptedData []byte
+	// var EncryptedData []byte
 	fmt.Println("Total Time to Encrypt the data is ",totalTime)
-	for _,v := range data{
-		fmt.Println(v)
-		for _,c := range v.Data["amount"]{
-			UnEncryptedData = append(UnEncryptedData,byte(c))
-		}
-	}
-	for _,v := range ecnryptedTransactions{
-		fmt.Println(v.Data["amount"])
-		for _,c := range v.Data["amount"]{
-			EncryptedData = append(EncryptedData, byte(c))
-		}
-	}
-	fmt.Println(len(UnEncryptedData),"/",len(EncryptedData))
+	// for _,v := range data{
+	// 	fmt.Println(v)
+	// 	for _,c := range v.Data[columns[0]]{
+	// 		UnEncryptedData = append(UnEncryptedData,byte(c))
+	// 	}
+	// }
+	// for _,v := range ecnryptedTransactions{
+	// 	fmt.Println(v.Data[columns[0]])
+	// 	for _,c := range v.Data[columns[0]]{
+	// 		EncryptedData = append(EncryptedData, byte(c))
+	// 	}
+	// }
+	fmt.Println(mergeTrans[0])
+	fmt.Println(len(mergeTrans[0]))
 	
 }

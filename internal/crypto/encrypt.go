@@ -12,7 +12,7 @@ import (
 )
 
 
-func EncryptTransactions(transactions []storage.Transaction,columns []string,TreeDbPath, SercretPath string)([]storage.Transaction,error){
+func EncryptTransactions(transactions []storage.Transaction,columns []string,TreeDbPath, SercretPath string)([]storage.Transaction,[]string,error){
 	leParams,err := SetupLEParameters()
 	if err != nil{
 		log.Fatal(err)
@@ -20,14 +20,14 @@ func EncryptTransactions(transactions []storage.Transaction,columns []string,Tre
 	fmt.Printf("Generating Encryption Key Pairs...")
 	publicKey, secretKey := leParams.KeyGen()
 	if publicKey == nil || len(publicKey.Elements) == 0{
-		return nil,fmt.Errorf("failed to generate valid key Pairs")
+		return nil,nil,fmt.Errorf("failed to generate valid key Pairs")
 	}
 	fmt.Printf("Saving secret key to %s",SercretPath)
 	if err := storage.SaveSecretkey(secretKey,SercretPath); err != nil{
-		return nil,fmt.Errorf("Failed to save secret key: %w",err)
+		return nil,nil,fmt.Errorf("failed to save secret key: %w",err)
 	}
 	encryptTransactions := make([]storage.Transaction,len(transactions))
-
+	encryptTransactions2 := make([]string,len(transactions))
 	treeDb,err := sql.Open("sqlite3",TreeDbPath)
 
 	if err !=  nil{
@@ -41,6 +41,7 @@ func EncryptTransactions(transactions []storage.Transaction,columns []string,Tre
 	errorCount := 0
 
 	for i,trans := range transactions{
+		mergedEncryptedTransaction := ""
 		if i > 0 && i%10 == 0{
 			fmt.Printf("Encrypted %d/%d Transactions \n",i,len(transactions))
 		}
@@ -49,6 +50,7 @@ func EncryptTransactions(transactions []storage.Transaction,columns []string,Tre
 		}
 
 		for _,col := range columns{
+			mergedEncryptedTransaction += trans.Data[col]
 			dataStr := trans.Data[col]
 			dataPloy := StringToPoly(dataStr,leParams.R)
 
@@ -95,12 +97,60 @@ func EncryptTransactions(transactions []storage.Transaction,columns []string,Tre
 					successCount++;
 				}
 			}
+
 			encryptedTrans.Data[col] = EncryptedStr
 
 		}
+		mergedDataPoly := StringToPoly(mergedEncryptedTransaction,leParams.R)
+		fmt.Println("merged Transaction string size",len(mergedEncryptedTransaction))
+		var d2 *ring.Poly
+		var EncErr2 error
+
+			func(){
+				defer func(){
+					if r := recover(); r != nil{
+						EncErr2 = fmt.Errorf("panic in direct Encryption: %v",r)
+					}
+				}()
+
+			d2 = leParams.R.NewPoly()
+			nonce := make([]byte,8)
+			if _,err := rand.Read(nonce); err == nil{
+				nonceStr := base64.StdEncoding.EncodeToString(nonce)
+				salt := fmt.Sprintf("%d-%s-%s",i,nonceStr)
+				saltPoly := StringToPoly(salt,leParams.R)
+
+				leParams.R.Add(mergedDataPoly,publicKey.Elements[0],d2)
+				leParams.R.Add(d2,saltPoly,d2)
+				leParams.R.NTT(d2,d2)
+			}
+			if len(publicKey.Elements) > 1{
+				temp := leParams.R.NewPoly()
+				leParams.R.MulCoeffs(d2,publicKey.Elements[1],temp)
+				d2 = temp
+			}
+			}()
+			var EncryptedStr2 string
+			if EncErr2 != nil{
+				fmt.Printf("Encryption Failed for: %v\n",EncErr2)
+				EncryptedStr2 = fmt.Sprintf("PLAIN_%s",mergedEncryptedTransaction)
+				errorCount++;
+			} else {
+				dBytes,err := d2.MarshalBinary()
+				if err != nil{
+					fmt.Printf("Serilization Failed : %v\n",err)
+					EncryptedStr2 = fmt.Sprintf("PLAIN_%s",mergedEncryptedTransaction)
+					errorCount++;
+				} else {
+					EncryptedStr2 = SerilizeEncryption(dBytes)
+					successCount++;
+				}
+			}
+			
+		encryptTransactions2[i] = EncryptedStr2
 		encryptTransactions[i] = encryptedTrans
 	}
 		fmt.Printf("Performed Encrypted Transactions with successfull encryptions: %d, Errors: %d",successCount,errorCount)
 		fmt.Println("All transactions are Proccessed")
-		return encryptTransactions,nil
+		return encryptTransactions,encryptTransactions2,nil
 }

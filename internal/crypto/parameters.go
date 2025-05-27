@@ -34,7 +34,7 @@ func SetupLEParameters()(*LE.LE,error){
 	if leParams.R == nil{
 		return nil, fmt.Errorf("ring(R) is nil in le parameters")
 	}
-	leParams.Layers = 2 // minimal depth of the tree for efficiency
+	leParams.Layers = 2// minimal depth of the tree for efficiency
 
 	fmt.Println("Successfully initialized the LE parameters: ")
 	fmt.Printf(" -Ring Dimension: %d\n",D)
