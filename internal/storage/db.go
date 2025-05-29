@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
 	// "strings"
@@ -13,9 +14,13 @@ import (
 type Transaction struct{
 	Data map[string]string
 }
+type MergedTransaction struct{
+	Data string
+	Index int
+}
 
 // OpenDatabase opens and returns a connection to the SQLite database at the given path
-func OpenDatabase(DBpath string) *sql.DB {
+func OpenDatabase(DBpath string) *sql.DB { 
 	db, err := sql.Open("sqlite3", DBpath)
 	if err != nil {
 		log.Fatal(err)
@@ -173,4 +178,98 @@ func GetTableColumns(db *sql.DB, tableName string) []string {
 
 	return columns
 
+}
+
+
+func sanitizedColumnName(name string) string {
+	reg := regexp.MustCompile("[^a-zA-Z0-9_]")
+	sanitized := reg.ReplaceAllString(name,"_")
+	if len(sanitized) > 0 && sanitized[0] >= '0' && sanitized[0] <= '9'{
+		sanitized = "-" + sanitized
+	}
+	return sanitized
+}
+
+
+func CreateDatabase(transactions []Transaction,tableName string,columns []string,dbPath string){
+	db,err := sql.Open("sqlite3",dbPath)
+	if err != nil{
+		fmt.Printf("Error creating Database%v\n",err)
+		return
+	}
+
+	defer db.Close()
+
+	sanitizedColumns := make([]string,len(columns))
+	columnMap := make(map[string]string)
+	for i,col := range columns{
+		sanitized := sanitizedColumnName(col)
+		sanitizedColumns[i] = sanitized
+		columnMap[col] = sanitized
+
+		if sanitized != col{
+			fmt.Printf("Note: column name %s is sanitized to %s for sql compatibility\n",col,sanitized)
+		}
+	}
+
+	columnSql := strings.Join(sanitizedColumns," TEXT, ") + " TEXT"
+	createSqlTable := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);",tableName,columnSql)
+	fmt.Println("Creating a table...",createSqlTable)
+	
+	_, err = db.Exec(createSqlTable)
+	if err != nil{
+		fmt.Printf("Error Creating table %v\n",err)
+		return
+	}
+	existingColumns := GetTableColumns(db,tableName)
+
+	if len(existingColumns) == 0{
+		fmt.Printf("Couldn't Verify table structure after creation. \n")
+		return
+	}
+
+	// Remove redundant column existence check
+
+	// Build placeholders for insert statement
+	placeholders := strings.Repeat("?,", len(sanitizedColumns))
+	placeholders = strings.TrimRight(placeholders, ",")
+	insertSql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",tableName,strings.Join(sanitizedColumns,", "),placeholders)
+	fmt.Println("inserting with sql....",insertSql)
+	stmt,err := db.Prepare(insertSql)
+
+	if err != nil{
+		fmt.Printf("preparing insert statement: %v\n",err)
+		return
+	}
+	defer stmt.Close()
+
+	successCount := 0
+	errorCount := 0
+
+	for _,tran := range transactions{
+		values := make([]interface{},len(sanitizedColumns))
+
+		for i , originalCol := range columns{
+			values[i] = tran.Data[originalCol]
+		}
+
+		_,err := stmt.Exec(values...)
+
+		if err != nil{
+			errorCount++
+			fmt.Printf("Error inserting statement: %v\n",err)
+			
+			if errorCount > 10{
+				continue
+			}
+		} else {
+			successCount++
+		}
+
+	}	
+	if errorCount > 0 {
+		fmt.Printf("\n Insert Summery: %d successful, %d failed",successCount,errorCount)
+	} else {
+		fmt.Printf("All %d rows are successfully inserted \n",successCount)
+	}
 }

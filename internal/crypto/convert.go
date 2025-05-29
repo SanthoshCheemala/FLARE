@@ -20,7 +20,6 @@ func StringToPoly(s string,r *ring.Ring) *ring.Poly{
 }
 
 func SerilizeEncryption(dBytes []byte) string{
-	fmt.Println("\nEncryption-----------",len(dBytes))
 	checkSum := uint32(0)
 	for _,b := range dBytes{
 		checkSum += uint32(b)
