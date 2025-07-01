@@ -228,9 +228,6 @@ func CreateDatabase(transactions []Transaction,tableName string,columns []string
 		return
 	}
 
-	// Remove redundant column existence check
-
-	// Build placeholders for insert statement
 	placeholders := strings.Repeat("?,", len(sanitizedColumns))
 	placeholders = strings.TrimRight(placeholders, ",")
 	insertSql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",tableName,strings.Join(sanitizedColumns,", "),placeholders)
@@ -273,3 +270,5 @@ func CreateDatabase(transactions []Transaction,tableName string,columns []string
 		fmt.Printf("All %d rows are successfully inserted \n",successCount)
 	}
 }
+
+

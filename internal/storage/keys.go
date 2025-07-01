@@ -43,11 +43,11 @@ func SaveSecretkey(sk *matrix.Vector,dbPath string) error{
 
 func InitializeTreeDB(db *sql.DB,layers int) (error){
 	for i := 0; i <= layers; i++{
-		query := fmt.Sprintf(`CREATE TABLE IF NOT EXIST tree_%d (
+		query := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS tree_%d (
 			rowid INTEGER PRIMARY KEY,
 			p1 BLOB,
 			p2 BLOB,
-			p3 BLOB
+			p3 BLOB,
 			p4 BLOB,
 			y_def BOOLEAN
 		)`,i)

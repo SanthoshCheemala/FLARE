@@ -3,11 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"strings"
-	"time"
-
+	// "time"
 	"github.com/SanthoshCheemala/FLARE.git/internal/crypto"
 	"github.com/SanthoshCheemala/FLARE.git/internal/storage"
 )
@@ -76,15 +74,7 @@ func getMode(encrypt, decrypt bool) string {
 func processData(columns, mergedColumns []string, encrypt, decrypt bool, limit int) {
 	db := storage.OpenDatabase("data/transactions.db")
 	data := storage.RetriveData(db,"finanical_transactions",columns,mergedColumns,limit)
-	start := time.Now()
-	transactions,mergedEncryptTrans,err  := crypto.EncryptTransactions(data,columns,"data/tree.db","data/secret.bin")
-	if err != nil{
-		log.Fatal(err)
-	}
-	end := time.Now()
-	totalTime := end.Sub(start)
-	fmt.Println("Total Time to Encrypt the data is ",totalTime)
-	fmt.Println(mergedEncryptTrans[0].Data)
-	fmt.Println(len(mergedEncryptTrans[0].Data))
-	storage.CreateDatabase(transactions,"LE_Table",columns,"data/encrypt.db")
+	_,_ = crypto.Laconic_PSI(data,data,"data/tree.db")
+	
+	// storage.CreateDatabase(transactions,"LE_Table",columns,"data/encrypt.db")
 }
