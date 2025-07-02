@@ -3,6 +3,7 @@ package crypto
 import (
 	"database/sql"
 	"encoding/binary"
+	"fmt"
 
 	"github.com/SanthoshCheemala/Crypto/hash"
 	"github.com/SanthoshCheemala/FLARE.git/internal/storage"
@@ -52,13 +53,22 @@ func Laconic_PSI(Client_Transaction []storage.Transaction,Server_Transaction []s
 		
 		Hashed_Transactions[i] = binary.BigEndian.Uint64(H.Sum())
 	}
-
+	
 	LE.Upd(db,Hashed_Transactions[0],leParams.Layers,publikeys[0],leParams)
 	pp := LE.ReadFromDB(db,0,0,leParams).NTT(leParams.R)
+	vec1,vec2 := LE.WitGen(db,leParams,Hashed_Transactions[0])
 	msg := matrix.NewRandomPolyBinary(leParams.R)
-	Cxtx := Laconic_PSI_server(pp,msg,Server_Transaction,leParams)
+	Cxtx := Laconic_PSI_server(pp,msg,Server_Transaction[0:2:20],leParams)
+	Z := make([]storage.Transaction,0);
+	fmt.Println(Cxtx)
+	for i := 0; i < len(Cxtx); i++ {
+		msg2 := LE.Dec(leParams,privateKeys[0],vec1,vec2,Cxtx[i].c0,Cxtx[i].c1,Cxtx[i].c,Cxtx[i].d)
+		if msg2 == msg {
+			Z = append(Z, Client_Transaction[0])
+		}
+	}
 	// PSI_SET := []int{}
-	return nil,nil
+	return Z,nil
 }
 
 func Laconic_PSI_server(pp *matrix.Vector,msg *ring.Poly,server_Transaction []storage.Transaction,le *LE.LE) ([]cxtx) {
@@ -73,13 +83,13 @@ func Laconic_PSI_server(pp *matrix.Vector,msg *ring.Poly,server_Transaction []st
 		}
 	Hashed_Transactions := make([]uint64,s_size)
 	
-	for i := 0; i <= s_size; i++ {
+	for i := 0; i < s_size; i++ {
 		H := hash.NewSHA256State()
 		H.Sha256([]byte(merged_Client_Transaction[i]))
 		Hashed_Transactions[i] = binary.BigEndian.Uint64(H.Sum())
 	}
 	Cxtx := make([]cxtx,s_size)
-	for i := 0; i <= s_size; i++ {
+	for i := 0; i < s_size; i++ {
 		r := make([]*matrix.Vector, le.Layers+1)
 		for j := 0; j < le.Layers+1; j++ {
 			r[j] = matrix.NewRandomVec(le.N, le.R, le.PRNG).NTT(le.R)

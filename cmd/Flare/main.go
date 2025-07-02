@@ -74,7 +74,11 @@ func getMode(encrypt, decrypt bool) string {
 func processData(columns, mergedColumns []string, encrypt, decrypt bool, limit int) {
 	db := storage.OpenDatabase("data/transactions.db")
 	data := storage.RetriveData(db,"finanical_transactions",columns,mergedColumns,limit)
-	_,_ = crypto.Laconic_PSI(data,data,"data/tree.db")
+	Intersection,err := crypto.Laconic_PSI(data,data,"data/tree.db")
+	if err != nil {
+		fmt.Print(err)
+	}
+	fmt.Println(Intersection)
 	
 	// storage.CreateDatabase(transactions,"LE_Table",columns,"data/encrypt.db")
 }
