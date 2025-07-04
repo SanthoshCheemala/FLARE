@@ -1,11 +1,12 @@
 package matrix
 
 import (
-	"github.com/tuneinsight/lattigo/v3/ring"
-	"github.com/tuneinsight/lattigo/v3/utils"
 	"math"
 	"math/rand"
 	"time"
+
+	"github.com/tuneinsight/lattigo/v3/ring"
+	"github.com/tuneinsight/lattigo/v3/utils"
 )
 
 type Vector struct {
@@ -115,7 +116,6 @@ func Add(vec1, vec2, vec3 *Vector, r *ring.Ring) {
 	for i := 0; i < n; i++ {
 		r.Add(vec1.Elements[i], vec2.Elements[i], vec3.Elements[i])
 	}
-	return
 }
 
 /*
@@ -176,7 +176,6 @@ func Sub(vec1, vec2, vec3 *Vector, r *ring.Ring) {
 	for i := 0; i < n; i++ {
 		r.Sub(vec1.Elements[i], vec2.Elements[i], vec3.Elements[i])
 	}
-	return
 }
 
 /*
@@ -256,5 +255,4 @@ func (vec *Vector) Decode(vecB [][]byte) {
 	for i := 0; i < n; i++ {
 		_ = vec.Elements[i].UnmarshalBinary(vecB[i])
 	}
-	return
 }

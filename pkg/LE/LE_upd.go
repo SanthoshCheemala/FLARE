@@ -171,14 +171,14 @@ func Enc(le *LE, pp *matrix.Vector, id uint64, m *ring.Poly, r []*matrix.Vector,
 	for i := 0; i < le.Layers; i++ {
 		ithBitInv := 1 - (id>>(le.Layers-i-1))&1
 		if ithBitInv == 1 {
-			//wg.Add(1)
+			wg.Add(1)
 			go CreateEncBlockIf(le, c0, c1, r[i], r[i+1], e0[i], e0[i+1], i, &wg)
 		} else {
-			//wg.Add(1)
+			wg.Add(1)
 			go CreateEncBlockElse(le, c0, c1, r[i], r[i+1], e1[i], e1[i+1], i, &wg)
 		}
 	}
-	//wg.Wait()
+	wg.Wait()
 	c := le.BNTT.MulVecLeft(r[le.Layers], le.R)
 	matrix.Add(c, e0[le.Layers], c, le.R)
 	p := matrix.Mul(pp, r[0], le.R)
@@ -202,7 +202,7 @@ func CreateEncBlockIf(le *LE, c0 []*matrix.Vector, c1 []*matrix.Vector, r0, r1, 
 	matrix.Add(ct01, e1, ct01, le.R)
 	c0[i] = ct00
 	c1[i] = ct01
-	//wg.Done()
+	wg.Done()
 }
 
 /*
@@ -218,7 +218,7 @@ func CreateEncBlockElse(le *LE, c0 []*matrix.Vector, c1 []*matrix.Vector, r0, r1
 	matrix.Add(ct01, e1, ct01, le.R)
 	c0[i] = ct00
 	c1[i] = ct01
-	//wg.Done()
+	wg.Done()
 }
 
 /*
@@ -264,7 +264,6 @@ func Dec(le *LE, sk *matrix.Vector, vec1 []*matrix.Vector, vec2 []*matrix.Vector
 
 func DecParallel(le *LE, c0, c1, u0, u1 *matrix.Vector, ctd1 []*ring.Poly, i int, wg *sync.WaitGroup) {
 	p := le.R.NewPoly()
-
 	le.R.Add(matrix.Mul(c0, u0, le.R), matrix.Mul(c1, u1, le.R), p)
 	le.R.InvNTT(p, p)
 	ctd1[i] = p

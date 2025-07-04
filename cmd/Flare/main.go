@@ -78,7 +78,7 @@ func processData(columns, mergedColumns []string, encrypt, decrypt bool, limit i
 	if err != nil {
 		fmt.Print(err)
 	}
-	fmt.Println(Intersection)
+	fmt.Println("length: ",len(Intersection))
 	
 	// storage.CreateDatabase(transactions,"LE_Table",columns,"data/encrypt.db")
 }
