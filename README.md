@@ -121,10 +121,6 @@ This implementation is based on research in lattice-based cryptography and Priva
 
 This is a research implementation. While built on sound cryptographic principles, it should undergo thorough security review before production use. The parameters and implementation choices prioritize educational value and functionality demonstration.
 
-## 📞 Contact
-
-For questions or suggestions, please open an issue on GitHub or contact the maintainer.
-
 ---
 
 **Disclaimer**: This software is provided for research and educational purposes. Users are responsible for ensuring compliance with applicable laws and regulations when using cryptographic software.
