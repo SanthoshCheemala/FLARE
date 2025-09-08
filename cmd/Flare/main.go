@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
 	// "time"
 	"github.com/SanthoshCheemala/FLARE.git/internal/crypto"
 	"github.com/SanthoshCheemala/FLARE.git/internal/storage"
@@ -14,14 +15,14 @@ func main() {
 
 	cols := flag.String("columns", "type,amount", "Comma-separated list of columns to encrypt")
 	mergedCols := flag.String("columns-merge", "", "Comma-separated list of columns to merge for encryption")
-	encrypt := flag.Bool("encrypt", false, "Enable encryption mode")
-	decrypt := flag.Bool("decrypt", false, "Enable decryption mode")
-	limit := flag.Int("LIMIT", 100, "Number of rows to process from the beginning")
+	// encrypt := flag.Bool("encrypt", false, "Enable encryption mode")
+	// decrypt := flag.Bool("decrypt", false, "Enable decryption mode")
+	limit := flag.Int("LIMIT", 50, "Number of rows to process from the beginning")
 
 
 	flag.Parse()
 
-	if err := validateFlags(*encrypt, *decrypt, *cols, *mergedCols, *limit); err != nil {
+	if err := validateFlags(*cols, *mergedCols, *limit); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		flag.Usage()
 		os.Exit(1)
@@ -38,20 +39,12 @@ func main() {
 	if len(mergedColumns) > 0 {
 		fmt.Println("- Merged columns:", mergedColumns)
 	}
-	fmt.Printf("- Mode: %s\n", getMode(*encrypt, *decrypt))
 	fmt.Println("- Row limit:", *limit)
 	
-	processData(columns, mergedColumns, *encrypt, *decrypt, *limit)
+	processData(columns, mergedColumns, *limit)
 }
 
-func validateFlags(encrypt, decrypt bool, cols, mergedCols string, limit int) error {
-	if encrypt && decrypt {
-		return fmt.Errorf("cannot use both -encrypt and -decrypt flags simultaneously")
-	}
-
-	if !encrypt && !decrypt {
-		return fmt.Errorf("must specify either -encrypt or -decrypt")
-	}
+func validateFlags( cols, mergedCols string, limit int) error {
 
 	if cols == "" {
 		return fmt.Errorf("must specify at least one column with -columns")
@@ -64,21 +57,18 @@ func validateFlags(encrypt, decrypt bool, cols, mergedCols string, limit int) er
 	return nil
 }
 
-func getMode(encrypt, decrypt bool) string {
-	if encrypt {
-		return "Encryption"
-	}
-	return "Decryption"
-}
-
-func processData(columns, mergedColumns []string, encrypt, decrypt bool, limit int) {
+func processData(columns, ColumnsTables []string, limit int) {
 	db := storage.OpenDatabase("data/transactions.db")
-	data := storage.RetriveData(db,"finanical_transactions",columns,mergedColumns,limit)
-	Intersection,err := crypto.Laconic_PSI(data,data,"data/tree.db")
+	data := storage.RetriveData(db,"finanical_transactions",columns,ColumnsTables,limit)
+	Intersection,err := crypto.Laconic_PSI(data[0:1],data[0:1],"data/tree.db")
 	if err != nil {
 		fmt.Print(err)
 	}
-	fmt.Println("length: ",len(Intersection))
-	
+	Intersection1,err := crypto.Laconic_PSI(data[0:1],data[1:2],"data/tree2.db")
+	if err != nil {
+		fmt.Print(err)
+	}
+	fmt.Println("length: ",len(Intersection),len(Intersection))
+	fmt.Println(Intersection,Intersection1)
 	// storage.CreateDatabase(transactions,"LE_Table",columns,"data/encrypt.db")
 }

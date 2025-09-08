@@ -2,12 +2,11 @@ package LE
 
 import (
 	"database/sql"
-	"strconv"
-	"sync"
-
-	"github.com/SanthoshCheemala/FLARE.git/pkg/matrix"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tuneinsight/lattigo/v3/ring"
+	"strconv"
+	"sync"
+	"github.com/SanthoshCheemala/FLARE.git/pkg/matrix"
 )
 
 /*
@@ -112,14 +111,14 @@ func EncWithRandomness(le *LE, pp *matrix.Vector, id uint64, m *ring.Poly) ([]*m
 	for i := 0; i < le.Layers; i++ {
 		ithBitInv := 1 - (id>>(le.Layers-i-1))&1
 		if ithBitInv == 1 {
-			//wg.Add(1)
+			wg.Add(1)
 			go CreateEncBlockIf(le, c0, c1, r[i], r[i+1], e0[i], e0[i+1], i, &wg)
 		} else {
-			//wg.Add(1)
+			wg.Add(1)
 			go CreateEncBlockElse(le, c0, c1, r[i], r[i+1], e0[i], e0[i+1], i, &wg)
 		}
 	}
-	//wg.Wait()
+	wg.Wait()
 	c := le.BNTT.MulVecLeft(r[le.Layers], le.R)
 
 	matrix.Add(c, e0[le.Layers], c, le.R)
@@ -264,6 +263,7 @@ func Dec(le *LE, sk *matrix.Vector, vec1 []*matrix.Vector, vec2 []*matrix.Vector
 
 func DecParallel(le *LE, c0, c1, u0, u1 *matrix.Vector, ctd1 []*ring.Poly, i int, wg *sync.WaitGroup) {
 	p := le.R.NewPoly()
+
 	le.R.Add(matrix.Mul(c0, u0, le.R), matrix.Mul(c1, u1, le.R), p)
 	le.R.InvNTT(p, p)
 	ctd1[i] = p
@@ -294,26 +294,26 @@ func WitGen(db *sql.DB, le *LE, id uint64) ([]*matrix.Vector, []*matrix.Vector) 
 		idInd := id >> (le.Layers - i)
 		b := (id >> (le.Layers - i)) & 1
 		if b == 0 {
-			//wg.Add(1)
+			wg.Add(1)
 			go WitGenParLeft(le, db, i, idInd, vecLeft, vecRight, &wg)
 		} else {
-			//wg.Add(1)
+			wg.Add(1)
 			go WitGenParRight(le, db, i, idInd, vecLeft, vecRight, &wg)
 		}
 	}
-	//wg.Wait()
+	wg.Wait()
 	return vecLeft, vecRight
 }
 func WitGenParLeft(le *LE, db *sql.DB, i int, ind uint64, vecLeft, vecRight []*matrix.Vector, wg *sync.WaitGroup) {
 	vecLeft[i-1] = ReadFromDB(db, i, ind, le).GInvMNTT(le.R)
 	vecRight[i-1] = ReadFromDB(db, i, ind+1, le).GInvMNTT(le.R)
-	//wg.Done()
+	wg.Done()
 }
 
 func WitGenParRight(le *LE, db *sql.DB, i int, ind uint64, vecLeft, vecRight []*matrix.Vector, wg *sync.WaitGroup) {
 	vecLeft[i-1] = ReadFromDB(db, i, ind-1, le).GInvMNTT(le.R)
 	vecRight[i-1] = ReadFromDB(db, i, ind, le).GInvMNTT(le.R)
-	//wg.Done()
+	wg.Done()
 }
 
 //TODO move these functions to a utils pakcage

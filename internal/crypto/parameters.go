@@ -2,16 +2,15 @@ package crypto
 
 import (
 	"fmt"
-	"math"
-
+	// "math"
 	"github.com/SanthoshCheemala/FLARE.git/pkg/LE"
 )
 
 
 func SetupLEParameters(size int)(*LE.LE,error){
 	Q := uint64(180143985094819841)
-	qBits := 16
-	D := 256
+	qBits := 58
+	D := 2048
 	N := 4
 
 	var leParams *LE.LE
@@ -36,7 +35,8 @@ func SetupLEParameters(size int)(*LE.LE,error){
 	if leParams.R == nil{
 		return nil, fmt.Errorf("ring(R) is nil in le parameters")
 	}
-	leParams.Layers = int(math.Log10(float64(size)))// minimal depth of the tree for efficiency
+	// leParams.Layers = int(math.Log10(float64(size)))// minimal depth of the tree for efficiency
+	leParams.Layers = 50
 
 	fmt.Println("Successfully initialized the LE parameters: ")
 	fmt.Printf(" -Ring Dimension: %d\n",D)
