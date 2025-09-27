@@ -7,16 +7,14 @@ import (
 	"strings"
 
 	// "time"
-	"github.com/SanthoshCheemala/FLARE.git/internal/crypto"
-	"github.com/SanthoshCheemala/FLARE.git/internal/storage"
+	"github.com/SanthoshCheemala/FLARE/internal/crypto"
+	"github.com/SanthoshCheemala/FLARE/internal/storage"
 )
 
 func main() {
 
 	cols := flag.String("columns", "type,amount", "Comma-separated list of columns to encrypt")
 	mergedCols := flag.String("columns-merge", "", "Comma-separated list of columns to merge for encryption")
-	// encrypt := flag.Bool("encrypt", false, "Enable encryption mode")
-	// decrypt := flag.Bool("decrypt", false, "Enable decryption mode")
 	limit := flag.Int("LIMIT", 50, "Number of rows to process from the beginning")
 
 
@@ -60,15 +58,15 @@ func validateFlags( cols, mergedCols string, limit int) error {
 func processData(columns, ColumnsTables []string, limit int) {
 	db := storage.OpenDatabase("data/transactions.db")
 	data := storage.RetriveData(db,"finanical_transactions",columns,ColumnsTables,limit)
-	Intersection,err := crypto.Laconic_PSI(data[0:1],data[0:1],"data/tree.db")
+	Intersection,err := crypto.Laconic_PSI(data[0:3],data[0:6],"data/tree.db")
 	if err != nil {
 		fmt.Print(err)
 	}
-	Intersection1,err := crypto.Laconic_PSI(data[0:1],data[1:2],"data/tree2.db")
 	if err != nil {
 		fmt.Print(err)
 	}
-	fmt.Println("length: ",len(Intersection),len(Intersection))
-	fmt.Println(Intersection,Intersection1)
+	fmt.Println("length: ",len(Intersection))
+	fmt.Println(Intersection)
+	fmt.Println("Noise statistics and timing report written to: data/psi_report.html")
 	// storage.CreateDatabase(transactions,"LE_Table",columns,"data/encrypt.db")
 }

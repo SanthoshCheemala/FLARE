@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/tuneinsight/lattigo/v3/ring"
-	// "github.com/SanthoshCheemala/FLARE.git/pkg/matrix"
+	// "github.com/SanthoshCheemala/FLARE/pkg/matrix"
 )
 
 func StringToPoly(s string,r *ring.Ring) *ring.Poly{

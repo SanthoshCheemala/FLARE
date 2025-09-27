@@ -1,4 +1,4 @@
-module github.com/SanthoshCheemala/FLARE.git
+module github.com/SanthoshCheemala/FLARE
 
 go 1.24.1
 

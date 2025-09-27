@@ -6,7 +6,7 @@ import (
 	"github.com/tuneinsight/lattigo/v3/ring"
 	"strconv"
 	"sync"
-	"github.com/SanthoshCheemala/FLARE.git/pkg/matrix"
+	"github.com/SanthoshCheemala/FLARE/pkg/matrix"
 )
 
 /*
