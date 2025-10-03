@@ -9,10 +9,20 @@ import (
 
 // SetupLEParameters sets up Laconic Encryption parameters based on expected set size.
 func SetupLEParameters(size int) (*LE.LE, error) {
+	return SetupLEParametersWithDimension(size, 256) // Default to 256 for stability
+}
+
+// SetupLEParametersWithDimension allows custom ring dimension for advanced users
+func SetupLEParametersWithDimension(size int, ringDimension int) (*LE.LE, error) {
 	Q := uint64(180143985094819841)
 	qBits := 58
-	D := 256
+	D := ringDimension
 	N := 4
+
+	// Validate ring dimension
+	if D != 256 && D != 512 && D != 1024 && D != 2048 {
+		return nil, fmt.Errorf("unsupported ring dimension %d. Supported values: 256, 512, 1024, 2048", D)
+	}
 
 	var leParams *LE.LE
 	var err error
@@ -20,7 +30,7 @@ func SetupLEParameters(size int) (*LE.LE, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("panic in LE.setup: %v", r)
+				err = fmt.Errorf("panic in LE.setup with dimension %d: %v", D, r)
 				fmt.Printf("Recovered from Panic in LE.setup: %v\n", r)
 			}
 		}()

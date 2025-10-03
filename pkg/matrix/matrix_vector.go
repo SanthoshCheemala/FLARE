@@ -205,13 +205,22 @@ func (vec1 *Vector) GInvMNTT(r *ring.Ring) (vec2 *Vector) {
 	m := n * 58
 	vec2 = NewVector(m, r)
 	for i := 0; i < n; i++ {
-		for j := 0; j < r.N; j++ {
+		// Ensure we don't exceed the actual coefficient array size
+		maxCoeffs := len(vec1.Elements[i].Coeffs[0])
+		maxJ := r.N
+		if maxCoeffs < r.N {
+			maxJ = maxCoeffs
+		}
+		
+		for j := 0; j < maxJ; j++ {
 			binCoeffs := CoeffToBin(vec1.Elements[i].Coeffs[0][j])
 			for k := 0; k < 58; k++ {
-				if binCoeffs[k] == 0 {
-					vec2.Elements[i*58+k].Coeffs[0][j] = 0
-				} else {
-					vec2.Elements[i*58+k].Coeffs[0][j] = r.Modulus[0] - 1
+				if i*58+k < len(vec2.Elements) { // Additional bounds check
+					if binCoeffs[k] == 0 {
+						vec2.Elements[i*58+k].Coeffs[0][j] = 0
+					} else {
+						vec2.Elements[i*58+k].Coeffs[0][j] = r.Modulus[0] - 1
+					}
 				}
 			}
 		}

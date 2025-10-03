@@ -56,6 +56,7 @@ func Setup(Q uint64, qBits int, D int, N int) (LEParams *LE) {
 	LEParams.Bound = math.MaxInt32
 	LEParams.QBits = qBits
 	LEParams.N = N
+	LEParams.D = D
 	LEParams.M = N * qBits
 	LEParams.Q = Q
 	LEParams.M2 = 512

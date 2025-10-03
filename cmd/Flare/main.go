@@ -1,72 +1,110 @@
+//go:build !analytics && !debug
+// +build !analytics,!debug
+
 package main
 
 import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
-	// "time"
 	"github.com/SanthoshCheemala/FLARE/internal/crypto"
 	"github.com/SanthoshCheemala/FLARE/internal/storage"
 )
 
 func main() {
-
 	cols := flag.String("columns", "type,amount", "Comma-separated list of columns to encrypt")
-	mergedCols := flag.String("columns-merge", "", "Comma-separated list of columns to merge for encryption")
-	limit := flag.Int("LIMIT", 50, "Number of rows to process from the beginning")
-
+	limit := flag.Int("LIMIT", 2, "Number of rows to process from the beginning")
 
 	flag.Parse()
 
-	if err := validateFlags(*cols, *mergedCols, *limit); err != nil {
+	if err := validateFlags(*cols, *limit); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		flag.Usage()
 		os.Exit(1)
 	}
 
 	columns := strings.Split(*cols, ",")
-	var mergedColumns []string
-	if *mergedCols != "" {
-		mergedColumns = strings.Split(*mergedCols, ",")
-	}
-
-	fmt.Println("Configuration:")
-	fmt.Println("- Columns to process:", columns)
-	if len(mergedColumns) > 0 {
-		fmt.Println("- Merged columns:", mergedColumns)
-	}
-	fmt.Println("- Row limit:", *limit)
 	
-	processData(columns, mergedColumns, *limit)
+	// --- IGNORE --- 
+	fmt.Println("🚀 FLARE - Lattice-based Private Set Intersection")
+	fmt.Println("Configuration:")
+	fmt.Printf("  📊 Columns: %v\n", columns)
+	fmt.Printf("  📈 Limit: %d\n", *limit)
+	fmt.Println()
+
+	success := processData(columns, *limit)
+
+	if success {
+		fmt.Println("FLARE execution completed successfully!")
+	} else {
+		fmt.Println("FLARE execution failed")
+		os.Exit(1)
+	}
 }
 
-func validateFlags( cols, mergedCols string, limit int) error {
-
+func validateFlags(cols string, limit int) error {
 	if cols == "" {
 		return fmt.Errorf("must specify at least one column with -columns")
 	}
-
 	if limit < 1 {
 		return fmt.Errorf("LIMIT must be a positive integer")
 	}
-
 	return nil
 }
 
-func processData(columns, ColumnsTables []string, limit int) {
-	db := storage.OpenDatabase("data/transactions.db")
-	data := storage.RetriveData(db,"finanical_transactions",columns,ColumnsTables,limit)
-	Intersection,err := crypto.Laconic_PSI(data[0:3],data[0:6],"data/tree.db")
-	if err != nil {
-		fmt.Print(err)
+func processData(columns []string, limit int) bool {
+	dbPath := filepath.Join("data", "transactions.db")
+
+	db := storage.OpenDatabase(dbPath)
+	if db == nil {
+		fmt.Printf("❌ Failed to open database: %s\n", dbPath)
+		return false
 	}
-	if err != nil {
-		fmt.Print(err)
+	defer db.Close()
+
+	data := storage.RetriveData(db, "finanical_transactions", columns, nil, limit)
+	if len(data) == 0 {
+		fmt.Println("No data retrieved from database")
+		return false
 	}
-	fmt.Println("length: ",len(Intersection))
-	fmt.Println(Intersection)
-	fmt.Println("Noise statistics and timing report written to: data/psi_report.html")
-	// storage.CreateDatabase(transactions,"LE_Table",columns,"data/encrypt.db")
+
+	fmt.Printf("Retrieved %d records\n", len(data))
+
+	clientSize := len(data) / 2
+	if clientSize == 0 {
+		clientSize = 1
+	}
+
+	clientData := data[0:clientSize]
+	serverData := data[0:limit]
+
+	intersection, err := crypto.Laconic_PSI(clientData, serverData, "data/tree.db")
+	
+	if err != nil {
+		fmt.Printf("❌ PSI failed: %v\n", err)
+		return false
+	}
+
+	fmt.Printf("Found %d intersections\n", len(intersection))
+	fmt.Printf("%v\n", intersection)
+	return true
+}
+
+func init() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, `FLARE - Production PSI System
+
+Usage: %s [OPTIONS]
+
+Options:
+`, os.Args[0])
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, `
+Example:
+  %s -columns="type,amount" -LIMIT=100
+`, os.Args[0])
+	}
 }

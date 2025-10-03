@@ -1,0 +1,16 @@
+{
+  "totalOperations": 800,
+  "averageTimeMs": 1.7697858212499988,
+  "medianTimeMs": 1.7697858212499988,
+  "p95TimeMs": 2.6546787318749985,
+  "p99TimeMs": 3.5395716424999977,
+  "minTimeMs": 1.130708,
+  "maxTimeMs": 18.489791,
+  "distributionMs": {
+    "1-5ms": 772,
+    "10-50ms": 1,
+    "5-10ms": 27
+  },
+  "percentiles": null,
+  "timestamp": "2025-10-01 17:43:29"
+}
