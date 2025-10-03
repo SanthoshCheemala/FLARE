@@ -1,6 +1,6 @@
-# FLARE 2.0: Advanced Lattice-based Private Set Intersection System
+# FLARE: Advanced Lattice-based Private Set Intersection System
 
-FLARE (Fast Lattice-based Authenticated Range Encryption) 2.0 is a next-generation post-quantum secure Private Set Intersection (PSI) system built using cutting-edge lattice-based cryptography. It enables two parties to securely identify common elements in their datasets without revealing any sensitive information, featuring comprehensive analytics and modular architecture.
+FLARE  is a next-generation post-quantum secure Private Set Intersection (PSI) system built using cutting-edge lattice-based cryptography. It enables two parties to securely identify common elements in their datasets without revealing any sensitive information, featuring comprehensive analytics and modular architecture.
 
 ## 🚀 What's New in Version 2.0
 
