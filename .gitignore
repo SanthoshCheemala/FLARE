@@ -1,6 +1,36 @@
 # Ignore data directory containing databases and CSV files
 data/
 
+# Data files
+*.csv
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+env.*
+
+# Node
+node_modules/
+dist/
+.next/
+.next-server/
+.next-client/
+out/
+build/
+
 # Go specific ignores
 *.exe
 *.exe~
@@ -10,6 +40,9 @@ data/
 *.test
 *.out
 go.work
+backend/main
+backend/seed
+backend/bin/
 
 # IDE specific files
 .idea/
