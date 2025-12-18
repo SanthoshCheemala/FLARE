@@ -8,7 +8,7 @@ type Customer struct {
 	Name       string    `json:"name"`
 	DOB        string    `json:"dob"` // YYYY-MM-DD
 	Country    string    `json:"country"`
-	Hash       uint64    `json:"hash"`
+	Hash       int64     `json:"hash"` // Changed to int64 for SQLite compatibility
 	ListID     int64     `json:"listId"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
@@ -30,7 +30,7 @@ type Sanction struct {
 	DOB       string    `json:"dob"`
 	Country   string    `json:"country"`
 	Program   string    `json:"program"`
-	Hash      uint64    `json:"hash"`
+	Hash      int64     `json:"hash"` // Changed to int64 for SQLite compatibility
 	ListID    int64     `json:"listId"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	Version   int       `json:"version"`
@@ -132,9 +132,10 @@ type LoginResponse struct {
 }
 
 type StartScreeningRequest struct {
-	Name            string  `json:"name"`
-	CustomerListID  int64   `json:"customerListId"`
-	SanctionListIDs []int64 `json:"sanctionListIds"`
+	Name            string            `json:"name"`
+	CustomerListID  int64             `json:"customerListId"`
+	SanctionListIDs []int64           `json:"sanctionListIds"`
+	ColumnMapping   map[string]string `json:"columnMapping"`
 }
 
 type StartScreeningResponse struct {

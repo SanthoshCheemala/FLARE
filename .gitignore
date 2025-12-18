@@ -9,6 +9,7 @@ data/
 
 # Logs
 *.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -57,3 +58,11 @@ backend/bin/
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Local scripts and runtime files
+*.sh
+.pids
+scalability_testing.go
+
+# Gemini/Agent artifacts
+.gemini/

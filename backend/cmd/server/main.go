@@ -30,7 +30,8 @@ import (
 // SessionContext wraps ServerContext with additional metadata
 type SessionContext struct {
 	*psiadapter.ServerContext
-	ListIDs []string // Sanction list IDs used in this session
+	ListIDs        []string // Sanction list IDs used in this session
+	EnabledColumns []string // Schema used for this session
 }
 
 type Server struct {
@@ -40,6 +41,14 @@ type Server struct {
 	mu      sync.Mutex // Protects sessions map
 	// Map of sessionID -> SessionContext
 	sessions map[string]*SessionContext
+	
+	// Global pre-computed state (for small datasets)
+	GlobalServerContext *psiadapter.ServerContext
+	GlobalParams        *psiadapter.SerializedServerParams
+	
+	// Batch PSI state (for large datasets)
+	GlobalBatchContext *psiadapter.BatchServerContext
+	UseBatching        bool
 }
 
 func NewServer(repo *repository.Repository) *Server {
@@ -50,8 +59,95 @@ func NewServer(repo *repository.Repository) *Server {
 		sessions: make(map[string]*SessionContext),
 	}
 	
+	// Initialize global state
+	if err := s.initGlobalState(); err != nil {
+		log.Printf("WARNING: Failed to initialize global PSI state: %v", err)
+	}
+	
 	s.routes()
 	return s
+}
+
+func (s *Server) initGlobalState() error {
+	log.Println("Initializing global PSI state...")
+	ctx := context.Background()
+	
+	// Load ALL sanction lists
+	lists, err := s.repo.GetSanctionLists(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get sanction lists: %w", err)
+	}
+	
+	var listIDs []string
+	for _, l := range lists {
+		listIDs = append(listIDs, fmt.Sprintf("%d", l.ID))
+	}
+	
+	if len(listIDs) == 0 {
+		log.Println("No sanction lists found. Skipping PSI init.")
+		return nil
+	}
+	
+	sanctionData, err := s.loadSanctionData(listIDs, nil) // nil for default schema
+	if err != nil {
+		return fmt.Errorf("failed to load sanction data: %w", err)
+	}
+	
+	log.Printf("Loaded %d sanction records for global state", len(sanctionData))
+	
+	// Initialize PSI Server Context
+	treeDir := "./data/server_trees"
+	os.MkdirAll(treeDir, 0755)
+	
+	// Ensure global directory is removed if it exists (fix for previous bug)
+	os.RemoveAll("./data/server_trees/global")
+	
+	treePath := filepath.Join(treeDir, "global")
+
+	// Check if we should use batching based on dataset size and RAM
+	if s.adapter.ShouldUseBatching(len(sanctionData)) {
+		optimalBatch := s.adapter.CalculateOptimalBatchSize()
+		numBatches := (len(sanctionData) + optimalBatch - 1) / optimalBatch
+		log.Printf("🔄 BATCH PSI ACTIVATED: %d records → %d batches of %d (based on available RAM)",
+			len(sanctionData), numBatches, optimalBatch)
+
+		batchCtx, err := s.adapter.InitServerBatched(ctx, sanctionData, treePath)
+		if err != nil {
+			return fmt.Errorf("InitServerBatched failed: %w", err)
+		}
+
+		// For batch mode, we use the first batch's params (all batches have compatible params)
+		serializedParams, err := s.adapter.SerializeParams(batchCtx.Batches[0])
+		if err != nil {
+			return fmt.Errorf("failed to serialize params: %w", err)
+		}
+
+		s.GlobalBatchContext = batchCtx
+		s.GlobalServerContext = batchCtx.Batches[0] // Primary context for params
+		s.GlobalParams = serializedParams
+		s.UseBatching = true
+		log.Printf("✓ Global Batch PSI state initialized: %d batches", len(batchCtx.Batches))
+	} else {
+		// Standard PSI for small datasets
+		log.Printf("⚡ Standard PSI: %d records (within RAM limits)", len(sanctionData))
+		
+		serverCtx, err := s.adapter.InitServer(ctx, sanctionData, treePath+".db")
+		if err != nil {
+			return fmt.Errorf("InitServer failed: %w", err)
+		}
+
+		serializedParams, err := s.adapter.SerializeParams(serverCtx)
+		if err != nil {
+			return fmt.Errorf("failed to serialize params: %w", err)
+		}
+		
+		s.GlobalServerContext = serverCtx
+		s.GlobalParams = serializedParams
+		s.UseBatching = false
+	}
+	
+	log.Println("Global PSI state initialized successfully")
+	return nil
 }
 
 func (s *Server) routes() {
@@ -68,6 +164,7 @@ func (s *Server) routes() {
 	
 	s.router.Get("/lists/sanctions", s.handleGetSanctions)
 	s.router.Post("/lists/sanctions/upload", s.handleUploadSanctions)
+	s.router.Delete("/lists/sanctions/{id}", s.handleDeleteSanctionList)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +174,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 type InitSessionRequest struct {
 	SanctionListIDs []string `json:"sanctionListIds"` // IDs of lists to screen against
+	EnabledColumns  []string `json:"enabledColumns"`  // Columns to use for hashing (schema)
 }
 
 type InitSessionResponse struct {
@@ -87,53 +185,92 @@ type InitSessionResponse struct {
 func (s *Server) handleInitSession(w http.ResponseWriter, r *http.Request) {
 	var req InitSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		log.Printf("Warning: failed to decode init session request: %v", err)
+	}
+
+	// Determine effective columns. Default to standard set if empty.
+	columns := req.EnabledColumns
+	if len(columns) == 0 {
+		columns = []string{"name", "dob", "country"}
+	}
+	
+	// Check if this matches global state (default)
+	isDefaultSchema := len(columns) == 3 && 
+		columns[0] == "name" && columns[1] == "dob" && columns[2] == "country"
+
+	// If default schema and global state is ready, use it (optimization)
+	if isDefaultSchema && s.GlobalParams != nil {
+		sessionID := fmt.Sprintf("session_global_%d", time.Now().UnixNano())
+		s.mu.Lock()
+		s.sessions[sessionID] = &SessionContext{
+			ServerContext:  s.GlobalServerContext,
+			ListIDs:        req.SanctionListIDs,
+			EnabledColumns: columns,
+		}
+		s.mu.Unlock()
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(InitSessionResponse{
+			SessionID: sessionID,
+			Params:    s.GlobalParams,
+		})
 		return
 	}
 
-	// Load real sanction data from DB
-	sanctionData, err := s.loadSanctionData(req.SanctionListIDs)
+	// Dynamic Schema: We must re-compute the tree
+	log.Printf("Initializing dynamic PSI session with columns: %v", columns)
+	
+	// Load requested lists (or all if none specified)
+	listIDs := req.SanctionListIDs
+	if len(listIDs) == 0 {
+		lists, _ := s.repo.GetSanctionLists(r.Context())
+		for _, l := range lists {
+			listIDs = append(listIDs, fmt.Sprintf("%d", l.ID))
+		}
+	}
+	
+	// Load and Hash Data dynamically
+	sanctionData, err := s.loadSanctionData(listIDs, columns)
 	if err != nil {
-		log.Printf("Failed to load sanction data: %v", err)
-		http.Error(w, "Failed to load sanction data", http.StatusInternalServerError)
+		http.Error(w, "Failed to load sanction data: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// Initialize PSI Server Context
-	sessionID := fmt.Sprintf("session_%d", time.Now().UnixNano())
-	treePath := fmt.Sprintf("./data/server_trees/%s", sessionID)
-	os.MkdirAll("./data/server_trees", 0755)
-
+	
+	// Init Server Context (Dynamic Tree)
+	// We use a temporary path for dynamic trees
+	treeDir := fmt.Sprintf("./data/server_trees/dynamic_%d", time.Now().UnixNano())
+	os.MkdirAll(treeDir, 0700)
+	defer os.RemoveAll(treeDir) // Clean up after session? No, need it for interactions.
+	// Actually, we should keep it for the session duration. 
+	// For this POC, we'll leave it or clean it up periodically.
+	
+	treePath := filepath.Join(treeDir, "tree.db")
 	serverCtx, err := s.adapter.InitServer(r.Context(), sanctionData, treePath)
 	if err != nil {
-		log.Printf("InitServer failed: %v", err)
-		http.Error(w, "Failed to initialize server", http.StatusInternalServerError)
+		http.Error(w, "InitServer failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Serialize parameters
 	serializedParams, err := s.adapter.SerializeParams(serverCtx)
 	if err != nil {
-		log.Printf("Failed to serialize params: %v", err)
-		http.Error(w, "Failed to serialize parameters", http.StatusInternalServerError)
+		http.Error(w, "SerializeParams failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// Store session with metadata (store the list IDs for later resolution)
+	
+	sessionID := fmt.Sprintf("session_dyn_%d", time.Now().UnixNano())
 	s.mu.Lock()
 	s.sessions[sessionID] = &SessionContext{
-		ServerContext: serverCtx,
-		ListIDs:       req.SanctionListIDs,
+		ServerContext:  serverCtx,
+		ListIDs:        listIDs,
+		EnabledColumns: columns,
 	}
 	s.mu.Unlock()
-
-	resp := InitSessionResponse{
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(InitSessionResponse{
 		SessionID: sessionID,
 		Params:    serializedParams,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	})
 }
 
 type IntersectRequest struct {
@@ -146,18 +283,6 @@ type IntersectResponse struct {
 }
 
 func (s *Server) handleIntersect(w http.ResponseWriter, r *http.Request) {
-	// Note: ClientCiphertext might need custom unmarshaling if it's complex.
-	// Assuming standard JSON works for now, or we might need to use Gob over HTTP body.
-	// But let's try JSON first. If ClientCiphertext is a struct with exported fields, it should work.
-	
-	// Wait, ClientCiphertext is `psi.Cxtx`. We don't know if it has JSON tags.
-	// If it fails, we'll need to use Gob for the request body.
-	// Let's use Gob for the request body to be safe, as we did for params.
-	
-	// Actually, let's stick to JSON for the wrapper, but maybe base64 encode the gob-encoded ciphertexts?
-	// Or just use Gob for the whole body.
-	// Let's try standard JSON decode first.
-	
 	var req IntersectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -170,12 +295,43 @@ func (s *Server) handleIntersect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Unwrap ServerContext for PSI operation
-	matches, err := s.adapter.DetectIntersection(r.Context(), sessionCtx.ServerContext, req.Ciphertexts)
-	if err != nil {
-		log.Printf("Intersection failed: %v", err)
-		http.Error(w, "Intersection failed", http.StatusInternalServerError)
-		return
+	var matches []uint64
+	var err error
+
+	// Check if this is a global session using batch context
+	isGlobalSession := len(req.SessionID) > 14 && req.SessionID[:14] == "session_global"
+	
+	if isGlobalSession && s.UseBatching && s.GlobalBatchContext != nil {
+		// Use batch intersection - iterate through ALL batches
+		log.Printf("🔄 Running batched intersection across %d batches", len(s.GlobalBatchContext.Batches))
+		allMatches := make(map[uint64]bool)
+		
+		for i, batch := range s.GlobalBatchContext.Batches {
+			batchMatches, batchErr := s.adapter.DetectIntersection(r.Context(), batch, req.Ciphertexts)
+			if batchErr != nil {
+				log.Printf("Batch %d intersection failed: %v", i, batchErr)
+				continue
+			}
+			log.Printf("   Batch %d: found %d matches", i, len(batchMatches))
+			for _, m := range batchMatches {
+				allMatches[m] = true
+			}
+		}
+		
+		// Convert map to slice
+		matches = make([]uint64, 0, len(allMatches))
+		for hash := range allMatches {
+			matches = append(matches, hash)
+		}
+		log.Printf("✓ Total matches from all batches: %d", len(matches))
+	} else {
+		// Standard single-context intersection
+		matches, err = s.adapter.DetectIntersection(r.Context(), sessionCtx.ServerContext, req.Ciphertexts)
+		if err != nil {
+			log.Printf("Intersection failed: %v", err)
+			http.Error(w, "Intersection failed", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	resp := IntersectResponse{
@@ -296,7 +452,7 @@ func (s *Server) handleUploadSanctions(w http.ResponseWriter, r *http.Request) {
 						Program: program,
 						Source:  source,
 						ListID:  listID,
-						Hash:    psiadapter.HashOne(psiadapter.SerializeSanction(name, dob, country, program)),
+						Hash:    int64(psiadapter.HashOne(psiadapter.SerializeSanction(name, dob, country, program))),
 					}
 					if err := s.repo.CreateSanction(r.Context(), sanction); err == nil {
 						count++
@@ -320,7 +476,33 @@ func (s *Server) handleUploadSanctions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) loadSanctionData(listIDs []string) ([]string, error) {
+func (s *Server) handleDeleteSanctionList(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid list ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.repo.DeleteSanctionList(r.Context(), id); err != nil {
+		log.Printf("Failed to delete sanction list: %v", err)
+		http.Error(w, "Failed to delete sanction list", http.StatusInternalServerError)
+		return
+	}
+
+	// Re-initialize global state to reflect changes
+	// In a real system, we might want to do this more gracefully or lazily
+	go func() {
+		if err := s.initGlobalState(); err != nil {
+			log.Printf("Failed to re-initialize global state after deletion: %v", err)
+		}
+	}()
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *Server) loadSanctionData(listIDs []string, columns []string) ([]string, error) {
 	var ids []int64
 	for _, idStr := range listIDs {
 		var id int64
@@ -330,67 +512,36 @@ func (s *Server) loadSanctionData(listIDs []string) ([]string, error) {
 	
 	var allStrings []string
 	
-	lists, err := s.repo.GetSanctionLists(context.Background())
+	// Load sanctions directly from database
+	sanctions, err := s.repo.GetSanctionsByListIDs(context.Background(), ids)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load sanctions: %w", err)
 	}
 	
-	listMap := make(map[int64]string)
-	for _, l := range lists {
-		listMap[l.ID] = l.FilePath
-	}
-
-	for _, listID := range ids {
-		filePath := listMap[listID]
-		if filePath == "" {
-			continue
-		}
-
-		file, err := os.Open(filePath)
-		if err != nil {
-			continue
-		}
-		defer file.Close()
-
-		reader := csv.NewReader(file)
-		headers, err := reader.Read()
-		if err != nil {
-			continue
-		}
-
-		headerMap := make(map[string]int)
-		for i, h := range headers {
-			headerMap[strings.ToLower(strings.TrimSpace(h))] = i
-		}
-		
-		getValue := func(record []string, colName string) string {
-			if idx, ok := headerMap[colName]; ok && idx < len(record) {
-				return record[idx]
-			}
-			return ""
-		}
-
-		for {
-			record, err := reader.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				continue
-			}
-
-			name := getValue(record, "name")
-			dob := getValue(record, "dob")
-			country := getValue(record, "country")
-			program := getValue(record, "sanction_program")
-			if program == "" {
-				program = getValue(record, "program")
-			}
-
-			allStrings = append(allStrings, psiadapter.SerializeSanction(name, dob, country, program))
-		}
+	if len(columns) == 0 {
+		columns = []string{"name", "dob", "country"}
 	}
 	
+	for _, sanction := range sanctions {
+		// Dynamic serialization
+		vals := map[string]string{
+			"name":    sanction.Name,
+			"dob":     sanction.DOB,
+			"country": sanction.Country,
+			"program": sanction.Program,
+		}
+		serialized := psiadapter.SerializeDynamic(vals, columns)
+		allStrings = append(allStrings, serialized)
+	}
+	
+	// Debug
+	if len(allStrings) > 0 {
+		log.Printf("[DEBUG] Server loaded %d sanction records with schema %v", len(allStrings), columns)
+		for i := 0; i < 3 && i < len(allStrings); i++ {
+			hash := psiadapter.HashOne(allStrings[i])
+			log.Printf("[DEBUG] Sanction %d: '%s' -> hash: %d", i, allStrings[i], hash)
+		}
+	}
 	return allStrings, nil
 }
 
@@ -426,7 +577,7 @@ func (s *Server) handleResolveSanctions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req struct {
-		Hashes []uint64 `json:"hashes"`
+		Hashes []int64 `json:"hashes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -449,6 +600,7 @@ func (s *Server) handleResolveSanctions(w http.ResponseWriter, r *http.Request) 
 		id, _ := strconv.ParseInt(idStr, 10, 64)
 		listIDs[i] = id
 	}
+	log.Printf("[DEBUG] Resolving for session %s with ListIDs: %v", sessionID, listIDs)
 
 	sanctions, err := s.repo.GetSanctionsByListIDs(r.Context(), listIDs)
 	if err != nil {
@@ -456,19 +608,39 @@ func (s *Server) handleResolveSanctions(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Failed to load sanctions", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("[DEBUG] Loaded %d sanctions from DB", len(sanctions))
 
 	// Create hash map for O(1) lookup
-	hashSet := make(map[uint64]bool)
+	hashSet := make(map[int64]bool)
 	for _, hash := range req.Hashes {
-		hashSet[hash] = true
+		hashSet[int64(hash)] = true
 	}
+	log.Printf("[DEBUG] Request contains %d hashes. Sample: %v", len(req.Hashes), req.Hashes[:min(3, len(req.Hashes))])
 
-	// Filter sanctions that match the provided hashes
+	// Filter sanctions that match the provided hashes using DYNAMIC hashing
 	var matchedSanctions []map[string]interface{}
+	
+	// Default columns if not set (legacy sessions)
+	columns := serverCtx.EnabledColumns
+	if len(columns) == 0 {
+		columns = []string{"name", "dob", "country"}
+	}
+	
 	for _, sanction := range sanctions {
-		if hashSet[sanction.Hash] {
+		// Re-calculate hash using the session's schema
+		vals := map[string]string{
+			"name":    sanction.Name,
+			"dob":     sanction.DOB,
+			"country": sanction.Country,
+			"program": sanction.Program,
+		}
+		serialized := psiadapter.SerializeDynamic(vals, columns)
+		dynamicHash := int64(psiadapter.HashOne(serialized))
+		
+		if hashSet[dynamicHash] {
+			log.Printf("[DEBUG] Match found! Hash: %d, Name: %s", dynamicHash, sanction.Name)
 			matchedSanctions = append(matchedSanctions, map[string]interface{}{
-				"hash":    sanction.Hash,
+				"hash":    dynamicHash, // Return the DYNAMIC hash properly
 				"name":    sanction.Name,
 				"dob":     sanction.DOB,
 				"country": sanction.Country,

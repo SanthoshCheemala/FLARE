@@ -30,6 +30,7 @@ func NewPSIClient(serverURL string) *PSIClient {
 
 type InitSessionRequest struct {
 	SanctionListIDs []string `json:"sanctionListIds"`
+	EnabledColumns  []string `json:"enabledColumns"`
 }
 
 type InitSessionResponse struct {
@@ -37,9 +38,10 @@ type InitSessionResponse struct {
 	Params    *psiadapter.SerializedServerParams `json:"params"`
 }
 
-func (c *PSIClient) InitSession(ctx context.Context, sanctionListIDs []string) (string, *psiadapter.SerializedServerParams, error) {
+func (c *PSIClient) InitSession(ctx context.Context, sanctionListIDs []string, enabledColumns []string) (string, *psiadapter.SerializedServerParams, error) {
 	reqBody := InitSessionRequest{
 		SanctionListIDs: sanctionListIDs,
+		EnabledColumns:  enabledColumns,
 	}
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
@@ -118,8 +120,8 @@ type SanctionList struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Source      string `json:"source"`
-	RecordCount int    `json:"record_count"`
-	CreatedAt   string `json:"created_at"`
+	RecordCount int    `json:"recordCount"`
+	CreatedAt   string `json:"createdAt"`
 }
 
 func (c *PSIClient) GetSanctionLists(ctx context.Context) ([]SanctionList, error) {
@@ -146,10 +148,35 @@ func (c *PSIClient) GetSanctionLists(ctx context.Context) ([]SanctionList, error
 	return lists, nil
 }
 
+func (c *PSIClient) DeleteSanctionList(ctx context.Context, id int64) error {
+	req, err := http.NewRequestWithContext(ctx, "DELETE", fmt.Sprintf("%s/lists/sanctions/%d", c.serverURL, id), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 // ResolveSanctions fetches full sanction details for matched hashes from the Server
 func (c *PSIClient) ResolveSanctions(ctx context.Context, sessionID string, hashes []uint64) ([]*models.Sanction, error) {
+	// Convert hashes to int64 for JSON compatibility with server
+	hashesInt64 := make([]int64, len(hashes))
+	for i, h := range hashes {
+		hashesInt64[i] = int64(h)
+	}
+
 	reqBody, err := json.Marshal(map[string]interface{}{
-		"hashes": hashes,
+		"hashes": hashesInt64,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -175,7 +202,7 @@ func (c *PSIClient) ResolveSanctions(ctx context.Context, sessionID string, hash
 
 	var result struct {
 		Sanctions []struct {
-			Hash    uint64 `json:"hash"`
+			Hash    int64  `json:"hash"`
 			Name    string `json:"name"`
 			DOB     string `json:"dob"`
 			Country string `json:"country"`

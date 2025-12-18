@@ -144,38 +144,38 @@ export default function DashboardPage() {
 
       {/* Recent Activity Section */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4">
+        {/* Recent Screenings */}
+        <Card className="col-span-7">
           <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
+            <CardTitle>Recent Screening Activity</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-8">
+            <div className="space-y-4">
               {stats?.recentScreenings && stats.recentScreenings.length > 0 ? (
                 stats.recentScreenings.map((screening) => (
-                  <div key={screening.id} className="flex items-center">
-                    <div className="h-9 w-9 rounded-full bg-slate-100 flex items-center justify-center border">
-                      <Activity className="h-4 w-4 text-slate-500" />
+                  <div key={screening.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-lg border">
+                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center border-2 border-blue-200">
+                      <Activity className="h-5 w-5 text-blue-600" />
                     </div>
-                    <div className="ml-4 space-y-1">
-                      <p className="text-sm font-medium leading-none">
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-semibold leading-none">
                         {screening.name}
                       </p>
-                      <p className="text-sm text-slate-500">
-                        {new Date(screening.createdAt).toLocaleDateString()}
+                      <p className="text-xs text-slate-500">
+                        {new Date(screening.createdAt).toLocaleString()}
                       </p>
                     </div>
-                    <div className="ml-auto font-medium flex items-center gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className={`text-2xl font-bold ${
+                          screening.matchCount > 0 ? "text-red-600" : "text-green-600"
+                        }`}>
+                          {screening.matchCount}
+                        </div>
+                        <div className="text-xs text-slate-500">matches</div>
+                      </div>
                       <span
-                        className={
-                          screening.matchCount > 0
-                            ? "text-red-600"
-                            : "text-slate-500"
-                        }
-                      >
-                        {screening.matchCount} Matches
-                      </span>
-                      <span
-                        className={`text-xs px-2 py-1 rounded-full ${
+                        className={`text-xs px-3 py-1.5 rounded-full font-medium ${
                           screening.status === "COMPLETED"
                             ? "bg-green-100 text-green-800"
                             : screening.status === "FAILED"
@@ -183,14 +183,15 @@ export default function DashboardPage() {
                             : "bg-blue-100 text-blue-800"
                         }`}
                       >
-                        {screening.status}
+                        {screening.status.charAt(0) + screening.status.slice(1).toLowerCase()}
                       </span>
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="text-center text-slate-500 py-8">
-                  No recent activity
+                <div className="text-center text-slate-400 py-12 bg-slate-50 rounded-lg">
+                  <Activity className="h-12 w-12 mx-auto mb-3 text-slate-300" />
+                  <p>No recent screening activity</p>
                 </div>
               )}
             </div>

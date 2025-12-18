@@ -60,25 +60,38 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.CORS([]string{"http://localhost:3000", "*"}))
-	r.Use(chimiddleware.Timeout(60 * time.Second))
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+	// WebSocket endpoint (must be outside Timeout middleware)
+	r.Get("/ws/logs", handler.StreamLogs)
+
+	// API endpoints with timeout
+	r.Group(func(r chi.Router) {
+		r.Use(chimiddleware.Timeout(60 * time.Second))
+
+		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+		})
+
+		// All endpoints are now public (no auth required)
+		r.Post("/lists/customers/upload", handler.UploadCustomerList)
+		r.Post("/lists/sanctions/upload", handler.UploadSanctionList)
+		r.Get("/lists/customers", handler.GetCustomerLists)
+		r.Get("/lists/customers/{id}/headers", handler.GetCustomerListHeaders)
+		r.Delete("/lists/customers/{id}", handler.DeleteCustomerList)
+		r.Get("/lists/sanctions", handler.GetSanctionLists)
+		r.Delete("/lists/sanctions/{id}", handler.DeleteSanctionList)
+
+		r.Post("/screenings", handler.StartScreening)
+		r.Get("/screenings/{jobId}/status", handler.ScreeningStatus)
+		r.Get("/screenings/{jobId}/events", handler.ScreeningEvents)
+		r.Get("/screenings/{jobId}/results", handler.GetScreeningResults)
+		
+		r.Patch("/results/{resultId}/status", handler.UpdateResultStatus)
+		
+		r.Get("/dashboard/stats", handler.GetStats)
+		r.Get("/performance/metrics", handler.GetPerformanceMetrics)
 	})
-
-	// All endpoints are now public (no auth required)
-	r.Post("/lists/customers/upload", handler.UploadCustomerList)
-	r.Post("/lists/sanctions/upload", handler.UploadSanctionList)
-	r.Get("/lists/customers", handler.GetCustomerLists)
-	r.Get("/lists/sanctions", handler.GetSanctionLists)
-
-	r.Post("/screenings", handler.StartScreening)
-	r.Get("/screenings/{jobId}/status", handler.ScreeningStatus)
-	r.Get("/screenings/{jobId}/events", handler.ScreeningEvents)
-	r.Get("/screenings/{jobId}/results", handler.GetScreeningResults)
-	
-	r.Get("/dashboard/stats", handler.GetStats)
 
 	addr := cfg.Server.Host + ":" + cfg.Server.Port
 	srv := &http.Server{

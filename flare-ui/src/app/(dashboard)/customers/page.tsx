@@ -60,6 +60,18 @@ export default function CustomersPage() {
     }
   };
 
+  const handleDelete = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this customer list?")) return;
+
+    try {
+      await apiClient.deleteCustomerList(id);
+      await fetchLists();
+    } catch (error) {
+      console.error("Failed to delete customer list:", error);
+      alert("Failed to delete customer list. Please try again.");
+    }
+  };
+
   if (loading) {
     return <div className="p-8">Loading customer lists...</div>;
   }
@@ -186,6 +198,7 @@ export default function CustomersPage() {
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => handleDelete(list.id)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

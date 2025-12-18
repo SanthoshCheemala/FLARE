@@ -106,28 +106,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create default admin user (password: admin123)
-INSERT OR IGNORE INTO users (id, email, password_hash, role, active) 
-VALUES (1, 'admin@flare.local', '$2a$10$8K1p/a0dL3LKzN8kHbLNEOq9ZG5Cx3HV8/7NULFUfLNDIGNqK7Nda', 'admin', 1);
 
--- Create sample customer list
-INSERT OR IGNORE INTO customer_lists (id, name, description, record_count, uploaded_by)
-VALUES (1, 'Sample Customers', 'Test customer data', 3, 1);
-
--- Create sample customers
-INSERT OR IGNORE INTO customers (external_id, name, dob, country, hash, list_id) VALUES
-('CUST001', 'John Doe', '1980-01-15', 'US', 123456789, 1),
-('CUST002', 'Jane Smith', '1975-05-20', 'UK', 987654321, 1),
-('CUST003', 'Bob Johnson', '1990-03-10', 'CA', 456789123, 1);
-
--- Create sample sanction list
-INSERT OR IGNORE INTO sanction_lists (id, name, source, description, record_count)
-VALUES (1, 'OFAC SDN', 'OFAC', 'Office of Foreign Assets Control Specially Designated Nationals', 2);
-
--- Create sample sanctions
-INSERT OR IGNORE INTO sanctions (source, name, dob, country, program, hash, list_id) VALUES
-('OFAC', 'John Doe', '1980-01-15', 'US', 'SANCTIONS', 123456789, 1),
-('OFAC', 'Evil Corp', '1990-01-01', 'XX', 'TERRORISM', 111222333, 1);
 `
 
 func (r *Repository) InitSchema() error {

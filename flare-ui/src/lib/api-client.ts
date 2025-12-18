@@ -22,6 +22,7 @@ export interface StartScreeningRequest {
   name: string;
   customerListId: number;
   sanctionListIds: number[];
+  columnMapping?: Record<string, string>;
 }
 
 export interface StartScreeningResponse {
@@ -202,8 +203,25 @@ class APIClient {
     return this.request<CustomerList[]>("/lists/customers");
   }
 
+  async deleteCustomerList(id: number): Promise<void> {
+    return this.request(`/lists/customers/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async getCustomerListHeaders(id: string): Promise<string[]> {
+    const data = await this.request<{ headers: string[] }>(`/lists/customers/${id}/headers`);
+    return data.headers;
+  }
+
   async getSanctionLists(): Promise<SanctionList[]> {
     return this.request<SanctionList[]>("/lists/sanctions");
+  }
+
+  async deleteSanctionList(id: number): Promise<void> {
+    return this.request(`/lists/sanctions/${id}`, {
+      method: "DELETE",
+    });
   }
 
   async uploadCustomerList(file: File, name: string, description: string) {
@@ -267,50 +285,71 @@ class APIClient {
   ): () => void {
     const token = getAccessToken();
     const url = `${this.baseURL}/screenings/${jobId}/events`;
-
-    const eventSource = new EventSource(token ? `${url}?token=${token}` : url);
+    let eventSource: EventSource | null = null;
     let jobCompleted = false;
+    let retryCount = 0;
+    const maxRetries = 5;
+    let retryTimeout: NodeJS.Timeout | null = null;
 
-    eventSource.addEventListener("done", (event) => {
-      // Server sent completion signal
-      jobCompleted = true;
-      eventSource.close();
-      onComplete?.();
-    });
+    const connect = () => {
+      if (jobCompleted) return;
 
-    eventSource.onmessage = (event) => {
-      // Ignore connection messages
-      if (event.data === ": connected") {
-        return;
-      }
+      eventSource = new EventSource(token ? `${url}?token=${token}` : url);
 
-      try {
-        const progress: ScreeningProgress = JSON.parse(event.data);
-        onProgress(progress);
+      eventSource.addEventListener("done", (event) => {
+        jobCompleted = true;
+        eventSource?.close();
+        onComplete?.();
+      });
 
-        if (progress.stage === "complete" || progress.stage === "failed") {
-          jobCompleted = true;
+      eventSource.onmessage = (event) => {
+        // Reset retry count on successful message
+        retryCount = 0;
+
+        if (event.data === ": connected") {
+          return;
         }
-      } catch (error) {
-        console.error("Failed to parse SSE event:", error);
-      }
+
+        try {
+          const progress: ScreeningProgress = JSON.parse(event.data);
+          onProgress(progress);
+
+          if (progress.stage === "complete" || progress.stage === "failed") {
+            jobCompleted = true;
+            eventSource?.close();
+          }
+        } catch (error) {
+          console.error("Failed to parse SSE event:", error);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        if (jobCompleted) {
+          eventSource?.close();
+          return;
+        }
+
+        // Connection lost
+        eventSource?.close();
+        
+        if (retryCount < maxRetries) {
+          retryCount++;
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff
+          retryTimeout = setTimeout(connect, delay);
+        } else {
+          console.error("SSE connection failed after max retries");
+          onError?.(new Error("Connection lost"));
+        }
+      };
     };
 
-    eventSource.onerror = (error) => {
-      // Only show error if job hasn't completed normally
-      if (!jobCompleted && eventSource.readyState !== EventSource.CLOSED) {
-        console.warn("SSE connection error");
-        eventSource.close();
-        onError?.(new Error("Connection lost"));
-      } else {
-        // Normal completion, just close quietly
-        eventSource.close();
-      }
-    };
+    connect();
 
     // Return cleanup function
     return () => {
-      eventSource.close();
+      jobCompleted = true;
+      if (retryTimeout) clearTimeout(retryTimeout);
+      if (eventSource) eventSource.close();
     };
   }
 
@@ -324,6 +363,16 @@ class APIClient {
     );
   }
 
+  async updateResultStatus(
+    resultId: number,
+    status: "PENDING" | "CONFIRMED" | "FALSE_POSITIVE"
+  ): Promise<void> {
+    return this.request(`/results/${resultId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+  }
+
   // Health check
   async healthCheck(): Promise<{ status: string }> {
     const response = await fetch(`${this.baseURL}/health`);
@@ -335,6 +384,37 @@ class APIClient {
 
   async getDashboardStats(): Promise<DashboardStats> {
     return this.request<DashboardStats>("/dashboard/stats");
+  }
+
+  async getPerformanceMetrics(): Promise<{
+    performance: {
+      total_time_seconds: number;
+      total_time_formatted: string;
+      key_gen_time_seconds: number;
+      key_gen_time_formatted: string;
+      key_gen_percent: number;
+      hashing_time_seconds: number;
+      hashing_time_formatted: string;
+      hashing_percent: number;
+      witness_time_seconds: number;
+      witness_time_formatted: string;
+      witness_percent: number;
+      intersection_time_seconds: number;
+      intersection_time_formatted: string;
+      intersection_percent: number;
+      num_workers: number;
+      total_operations: number;
+      throughput_ops_per_sec: number;
+    };
+    memory: {
+      alloc_mb: number;
+      total_alloc_mb: number;
+      sys_mb: number;
+      num_gc: number;
+      goroutines: number;
+    };
+  }> {
+    return this.request("/performance/metrics");
   }
 }
 

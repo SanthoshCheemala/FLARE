@@ -11,8 +11,11 @@ import {
   Download,
   Filter,
   ShieldAlert,
+  ThumbsDown,
+  ThumbsUp,
 } from "lucide-react";
 import { apiClient, DashboardStats } from "@/lib/api-client";
+import { MatchDetailsModal } from "@/components/match-details-modal";
 
 interface ScreeningResult {
   id: number;
@@ -38,6 +41,94 @@ export default function ResultsPage() {
   const [filter, setFilter] = useState<
     "ALL" | "PENDING" | "CONFIRMED" | "FALSE_POSITIVE"
   >("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedMatch, setSelectedMatch] = useState<ScreeningResult | null>(null);
+
+  // Export to CSV function
+  const exportToCSV = () => {
+    const csvContent = [
+      // Header
+      [
+        "Customer Name",
+        "Customer DOB",
+        "Customer Country",
+        "Sanction Name",
+        "Sanction DOB",
+        "Sanction Country",
+        "Program",
+        "Match Score",
+        "Status",
+      ].join(","),
+      // Data rows
+      ...filteredResults.map((r) =>
+        [
+          `"${r.customerName}"`,
+          r.customerDob,
+          r.customerCountry,
+          `"${r.sanctionName}"`,
+          r.sanctionDob,
+          r.sanctionCountry,
+          r.sanctionProgram,
+          (r.matchScore * 100).toFixed(2) + "%",
+          r.status,
+        ].join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `screening-results-${new Date().toISOString()}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Mark as false positive - persist to backend
+  const markAsFalsePositive = async (resultId: number) => {
+    try {
+      // Update locally first for immediate feedback
+      setResults((prev) =>
+        prev.map((r) =>
+          r.id === resultId ? { ...r, status: "FALSE_POSITIVE" as const } : r
+        )
+      );
+      
+      // Persist to backend
+      await apiClient.updateResultStatus(resultId, "FALSE_POSITIVE");
+    } catch (error) {
+      console.error("Failed to update status:", error);
+      // Revert on error
+      setResults((prev) =>
+        prev.map((r) =>
+          r.id === resultId ? { ...r, status: "PENDING" as const } : r
+        )
+      );
+    }
+  };
+
+  // Mark as confirmed - persist to backend
+  const markAsConfirmed = async (resultId: number) => {
+    try {
+      // Update locally first for immediate feedback
+      setResults((prev) =>
+        prev.map((r) =>
+          r.id === resultId ? { ...r, status: "CONFIRMED" as const } : r
+        )
+      );
+      
+      // Persist to backend
+      await apiClient.updateResultStatus(resultId, "CONFIRMED");
+    } catch (error) {
+      console.error("Failed to update status:", error);
+      // Revert on error
+      setResults((prev) =>
+        prev.map((r) =>
+          r.id === resultId ? { ...r, status: "PENDING" as const } : r
+        )
+      );
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -103,8 +194,22 @@ export default function ResultsPage() {
   }, []);
 
   const filteredResults = results.filter((result) => {
-    if (filter === "ALL") return true;
-    return result.status === filter;
+    // Filter by status
+    if (filter !== "ALL" && result.status !== filter) return false;
+    
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return (
+        result.customerName.toLowerCase().includes(query) ||
+        result.sanctionName.toLowerCase().includes(query) ||
+        result.customerCountry.toLowerCase().includes(query) ||
+        result.sanctionCountry.toLowerCase().includes(query) ||
+        result.sanctionProgram.toLowerCase().includes(query)
+      );
+    }
+    
+    return true;
   });
 
   const getStatusBadge = (status: string) => {
@@ -165,9 +270,9 @@ export default function ResultsPage() {
           <p className="text-slate-500">Review and manage screening matches.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={exportToCSV} disabled={filteredResults.length === 0}>
             <Download className="mr-2 h-4 w-4" />
-            Export
+            Export CSV
           </Button>
         </div>
       </div>
@@ -222,37 +327,51 @@ export default function ResultsPage() {
         </Card>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2">
-        <Button
-          variant={filter === "ALL" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setFilter("ALL")}
-        >
-          All ({results.length})
-        </Button>
-        <Button
-          variant={filter === "PENDING" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setFilter("PENDING")}
-        >
-          Pending ({results.filter((r) => r.status === "PENDING").length})
-        </Button>
-        <Button
-          variant={filter === "CONFIRMED" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setFilter("CONFIRMED")}
-        >
-          Confirmed ({results.filter((r) => r.status === "CONFIRMED").length})
-        </Button>
-        <Button
-          variant={filter === "FALSE_POSITIVE" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setFilter("FALSE_POSITIVE")}
-        >
-          False Positive (
-          {results.filter((r) => r.status === "FALSE_POSITIVE").length})
-        </Button>
+      {/* Search and Filters */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            variant={filter === "ALL" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFilter("ALL")}
+          >
+            All ({results.length})
+          </Button>
+          <Button
+            variant={filter === "PENDING" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFilter("PENDING")}
+          >
+            Pending ({results.filter((r) => r.status === "PENDING").length})
+          </Button>
+          <Button
+            variant={filter === "CONFIRMED" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFilter("CONFIRMED")}
+          >
+            Confirmed ({results.filter((r) => r.status === "CONFIRMED").length})
+          </Button>
+          <Button
+            variant={filter === "FALSE_POSITIVE" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFilter("FALSE_POSITIVE")}
+          >
+            False Positive (
+            {results.filter((r) => r.status === "FALSE_POSITIVE").length})
+          </Button>
+        </div>
+        
+        {/* Search Input */}
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search by name, country, program..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 pr-4 py-2 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent w-full md:w-80"
+          />
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        </div>
       </div>
 
       {/* Results Table */}
@@ -324,9 +443,38 @@ export default function ResultsPage() {
                       </td>
                       <td className="p-4">{getStatusBadge(result.status)}</td>
                       <td className="p-4 text-right">
-                        <Button variant="ghost" size="sm">
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          {result.status === "PENDING" && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => markAsConfirmed(result.id)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                title="Mark as Confirmed Match"
+                              >
+                                <ThumbsDown className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => markAsFalsePositive(result.id)}
+                                className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                title="Mark as False Positive"
+                              >
+                                <ThumbsUp className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            title="View Details"
+                            onClick={() => setSelectedMatch(result)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -336,6 +484,14 @@ export default function ResultsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Match Details Modal */}
+      {selectedMatch && (
+        <MatchDetailsModal
+          match={selectedMatch}
+          onClose={() => setSelectedMatch(null)}
+        />
+      )}
     </div>
   );
 }

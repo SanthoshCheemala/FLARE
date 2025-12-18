@@ -31,12 +31,27 @@ func (r *Repository) CreateCustomerList(ctx context.Context, name, description, 
 	return res.LastInsertId()
 }
 
-func (r *Repository) CreateCustomer(ctx context.Context, c *models.Customer) error {
+func (r *Repository) UpdateCustomerListRecordCount(ctx context.Context, listID int64, count int) error {
 	_, err := r.db.ExecContext(ctx,
+		`UPDATE customer_lists SET record_count = ? WHERE id = ?`,
+		count, listID)
+	return err
+}
+
+func (r *Repository) CreateCustomer(ctx context.Context, c *models.Customer) error {
+	res, err := r.db.ExecContext(ctx,
 		`INSERT INTO customers (external_id, name, dob, country, hash, list_id, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 		c.ExternalID, c.Name, c.DOB, c.Country, c.Hash, c.ListID)
-	return err
+	if err != nil {
+		return err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	c.ID = id
+	return nil
 }
 
 func (r *Repository) GetCustomersByListID(ctx context.Context, listID int64) ([]models.Customer, error) {
@@ -48,7 +63,7 @@ func (r *Repository) GetCustomersByListID(ctx context.Context, listID int64) ([]
 	}
 	defer rows.Close()
 
-	var customers []models.Customer
+	customers := make([]models.Customer, 0)
 	for rows.Next() {
 		var c models.Customer
 		if err := rows.Scan(&c.ID, &c.ExternalID, &c.Name, &c.DOB, &c.Country, &c.Hash, &c.ListID, &c.CreatedAt); err != nil {
@@ -82,7 +97,7 @@ func (r *Repository) GetCustomerLists(ctx context.Context) ([]models.CustomerLis
 	}
 	defer rows.Close()
 
-	var lists []models.CustomerList
+	lists := make([]models.CustomerList, 0)
 	for rows.Next() {
 		var l models.CustomerList
 		var filePath sql.NullString
@@ -95,6 +110,28 @@ func (r *Repository) GetCustomerLists(ctx context.Context) ([]models.CustomerLis
 		lists = append(lists, l)
 	}
 	return lists, rows.Err()
+}
+
+func (r *Repository) DeleteCustomerList(ctx context.Context, listID int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Delete associated customers first
+	_, err = tx.ExecContext(ctx, "DELETE FROM customers WHERE list_id = ?", listID)
+	if err != nil {
+		return err
+	}
+
+	// Delete the list
+	_, err = tx.ExecContext(ctx, "DELETE FROM customer_lists WHERE id = ?", listID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // Sanction operations
@@ -146,7 +183,7 @@ func (r *Repository) GetSanctionsByListIDs(ctx context.Context, listIDs []int64)
 	}
 	defer rows.Close()
 
-	var sanctions []models.Sanction
+	sanctions := make([]models.Sanction, 0)
 	for rows.Next() {
 		var s models.Sanction
 		if err := rows.Scan(&s.ID, &s.Source, &s.Name, &s.DOB, &s.Country, &s.Program, &s.Hash, &s.ListID, &s.UpdatedAt, &s.Version); err != nil {
@@ -180,7 +217,7 @@ func (r *Repository) GetSanctionLists(ctx context.Context) ([]models.SanctionLis
 	}
 	defer rows.Close()
 
-	var lists []models.SanctionList
+	lists := make([]models.SanctionList, 0)
 	for rows.Next() {
 		var l models.SanctionList
 		var filePath sql.NullString
@@ -193,6 +230,28 @@ func (r *Repository) GetSanctionLists(ctx context.Context) ([]models.SanctionLis
 		lists = append(lists, l)
 	}
 	return lists, rows.Err()
+}
+
+func (r *Repository) DeleteSanctionList(ctx context.Context, listID int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Delete associated sanctions first
+	_, err = tx.ExecContext(ctx, "DELETE FROM sanctions WHERE list_id = ?", listID)
+	if err != nil {
+		return err
+	}
+
+	// Delete the list
+	_, err = tx.ExecContext(ctx, "DELETE FROM sanction_lists WHERE id = ?", listID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // Screening operations
@@ -252,6 +311,14 @@ func (r *Repository) CreateScreeningResult(ctx context.Context, sr *models.Scree
 	return nil
 }
 
+// UpdateResultStatus updates the status of a screening result
+func (r *Repository) UpdateResultStatus(ctx context.Context, resultID int64, status string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE screening_results SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		status, resultID)
+	return err
+}
+
 // Audit log operations
 
 func (r *Repository) CreateAuditLog(ctx context.Context, log *models.AuditLog) error {
@@ -289,7 +356,7 @@ func (r *Repository) GetScreeningResults(ctx context.Context, screeningID int64,
 	}
 	defer rows.Close()
 
-	var results []models.ScreeningResultDetail
+	results := make([]models.ScreeningResultDetail, 0)
 	for rows.Next() {
 		var r models.ScreeningResultDetail
 		err := rows.Scan(
@@ -330,7 +397,7 @@ func (r *Repository) GetScreeningResultsByJobID(ctx context.Context, jobID strin
 	}
 	defer rows.Close()
 
-	var results []models.ScreeningResultDetail
+	results := make([]models.ScreeningResultDetail, 0)
 	for rows.Next() {
 		var r models.ScreeningResultDetail
 		err := rows.Scan(
@@ -405,12 +472,12 @@ func (r *Repository) UpdateUserLastLogin(ctx context.Context, userID int64) erro
 }
 
 // ResolveMatches maps hashes back to customer and sanction records
-func (r *Repository) ResolveMatches(ctx context.Context, hashes []uint64, customerListID int64, sanctionListIDs []int64) ([]struct {
+func (r *Repository) ResolveMatches(ctx context.Context, hashes []int64, customerListID int64, sanctionListIDs []int64) ([]struct {
 	Customer models.Customer
 	Sanction models.Sanction
 }, error) {
 	// Create hash map for efficient lookup
-	hashMap := make(map[uint64]bool)
+	hashMap := make(map[int64]bool)
 	for _, h := range hashes {
 		hashMap[h] = true
 	}
@@ -420,7 +487,7 @@ func (r *Repository) ResolveMatches(ctx context.Context, hashes []uint64, custom
 	if err != nil {
 		return nil, err
 	}
-	customerMap := make(map[uint64]models.Customer)
+	customerMap := make(map[int64]models.Customer)
 	for _, c := range customers {
 		if hashMap[c.Hash] {
 			customerMap[c.Hash] = c
@@ -432,7 +499,7 @@ func (r *Repository) ResolveMatches(ctx context.Context, hashes []uint64, custom
 	if err != nil {
 		return nil, err
 	}
-	sanctionMap := make(map[uint64]models.Sanction)
+	sanctionMap := make(map[int64]models.Sanction)
 	for _, s := range sanctions {
 		if hashMap[s.Hash] {
 			sanctionMap[s.Hash] = s
@@ -490,7 +557,7 @@ func (r *Repository) GetDashboardStats(ctx context.Context) (int64, int64, int64
 	}
 	defer rows.Close()
 
-	var recentScreenings []*models.Screening
+	recentScreenings := make([]*models.Screening, 0)
 	for rows.Next() {
 		var s models.Screening
 		var finishedAt sql.NullTime

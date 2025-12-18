@@ -79,6 +79,18 @@ export default function SanctionsPage() {
     return "bg-slate-100 text-slate-800";
   };
 
+  const handleDelete = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this sanction list?")) return;
+
+    try {
+      await apiClient.deleteSanctionList(id);
+      await fetchLists();
+    } catch (error) {
+      console.error("Failed to delete sanction list:", error);
+      alert("Failed to delete sanction list. Please try again.");
+    }
+  };
+
   if (loading) {
     return <div className="p-8">Loading sanction lists...</div>;
   }
@@ -234,6 +246,7 @@ export default function SanctionsPage() {
                             variant="ghost"
                             size="sm"
                             className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => handleDelete(list.id)}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

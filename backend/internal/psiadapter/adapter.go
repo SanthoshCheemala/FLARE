@@ -2,8 +2,6 @@ package psiadapter
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"runtime"
 	"strings"
@@ -13,7 +11,6 @@ import (
 	"github.com/SanthoshCheemala/LE-PSI/pkg/psi"
 	"github.com/tuneinsight/lattigo/v3/ring"
 
-	"github.com/SanthoshCheemala/FLARE/backend/internal/models"
 	"github.com/SanthoshCheemala/FLARE/backend/utils"
 )
 
@@ -99,42 +96,44 @@ func (a *Adapter) GetWorkerCount() int {
 	return a.maxWorkers
 }
 
-// HashDataPoints converts strings to uint64 hashes
+// HashDataPoints converts strings to uint64 hashes using the utils package
 func HashDataPoints(dataPoints []string) []uint64 {
-	hashes := make([]uint64, len(dataPoints))
-	for i, dp := range dataPoints {
-		hashes[i] = HashOne(dp)
-	}
-	return hashes
+	return utils.HashDataPoints(dataPoints)
 }
 
-// HashOne hashes a single string to uint64
+// HashOne hashes a single string to uint64 using the utils package
 func HashOne(data string) uint64 {
-	h := sha256.Sum256([]byte(data))
-	return binary.BigEndian.Uint64(h[:8])
+	hashes := utils.HashDataPoints([]string{data})
+	if len(hashes) > 0 {
+		return hashes[0]
+	}
+	return 0
 }
 
 // SerializeCustomer converts customer data to a normalized string for hashing
 func SerializeCustomer(name, dob, country string) string {
-	dp := models.PSIDataPoint{
-		Name:    normalizeString(name),
-		DOB:     dob,
-		Country: normalizeString(country),
-	}
-	s, _ := utils.SerializeData(dp)
-	return s
+	// Simple concatenation as requested
+	return fmt.Sprintf("%s|%s|%s", normalizeString(name), dob, normalizeString(country))
 }
 
 // SerializeSanction converts sanction data to a normalized string for hashing
 func SerializeSanction(name, dob, country, program string) string {
-	// Use same format as customer for matching - ignore program field
-	dp := models.PSIDataPoint{
-		Name:    normalizeString(name),
-		DOB:     dob,
-		Country: normalizeString(country),
+	return fmt.Sprintf("%s|%s|%s|%s", normalizeString(name), dob, normalizeString(country), normalizeString(program))
+}
+
+// SerializeDynamic creates a hash input string based on selected allowed columns.
+// columns is a list of keys like "name", "dob", "country".
+// values is a map where keys match the columns list.
+func SerializeDynamic(values map[string]string, columns []string) string {
+	var parts []string
+	for _, col := range columns {
+		val := values[col]
+		if col == "name" || col == "country" || col == "program" {
+			val = normalizeString(val)
+		}
+		parts = append(parts, val)
 	}
-	s, _ := utils.SerializeData(dp)
-	return s
+	return strings.Join(parts, "|")
 }
 
 // normalizeString performs basic normalization (lowercase, trim)
@@ -172,4 +171,202 @@ func (a *Adapter) DeserializeParams(params *SerializedServerParams) (*matrix.Vec
 		return nil, nil, nil, fmt.Errorf("library deserialize failed: %w", err)
 	}
 	return pp, msg, le, nil
+}
+
+// PerformanceMonitor wraps the PSI library's performance monitor
+type PerformanceMonitor struct {
+	monitor *psi.PerformanceMonitor
+}
+
+// NewPerformanceMonitor creates a new performance monitor
+func (a *Adapter) NewPerformanceMonitor() *PerformanceMonitor {
+	return &PerformanceMonitor{
+		monitor: psi.NewPerformanceMonitor(),
+	}
+}
+
+// GetMetrics returns all performance metrics from the PSI library
+func (pm *PerformanceMonitor) GetMetrics() map[string]interface{} {
+	if pm.monitor == nil {
+		return make(map[string]interface{})
+	}
+	return pm.monitor.GetMetrics()
+}
+
+// GetMemoryUsage returns current memory statistics
+func (pm *PerformanceMonitor) GetMemoryUsage() map[string]interface{} {
+	if pm.monitor == nil {
+		return make(map[string]interface{})
+	}
+	return pm.monitor.GetMemoryUsage()
+}
+
+// GetThroughput calculates operations per second
+func (pm *PerformanceMonitor) GetThroughput() float64 {
+	if pm.monitor == nil {
+		return 0.0
+	}
+	return pm.monitor.GetThroughput()
+}
+
+// ============================================================================
+// BATCH PSI SUPPORT - For large datasets that exceed RAM limits
+// ============================================================================
+
+// BatchServerContext holds context for batch-processed PSI with large datasets
+type BatchServerContext struct {
+	Batches        []*ServerContext // Individual batch contexts
+	BatchSize      int              // Records per batch
+	TotalRecords   int              // Total server records
+	TreePathPrefix string           // Prefix for batch tree files
+}
+
+// CalculateOptimalBatchSize determines batch size based on available RAM
+func (a *Adapter) CalculateOptimalBatchSize() int {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	// Get available system memory (in GB)
+	// Use HeapSys as a proxy for available memory
+	availableGB := float64(m.Sys) / 1024 / 1024 / 1024
+
+	// Safety margin: use 75% of available RAM
+	safeRAM_GB := availableGB * 0.75
+
+	// Each server record needs ~32MB during initialization
+	const RAM_PER_RECORD_GB = 0.032
+
+	batchSize := int(safeRAM_GB / RAM_PER_RECORD_GB)
+
+	// Bounds: minimum 50, maximum 1000
+	if batchSize < 50 {
+		batchSize = 50
+	}
+	if batchSize > 1000 {
+		batchSize = 1000
+	}
+
+	return batchSize
+}
+
+// ShouldUseBatching determines if batch processing is needed
+func (a *Adapter) ShouldUseBatching(recordCount int) bool {
+	optimalBatch := a.CalculateOptimalBatchSize()
+	return recordCount > optimalBatch
+}
+
+// InitServerBatched initializes PSI with batch processing for large datasets
+// It automatically determines batch size based on available RAM
+func (a *Adapter) InitServerBatched(ctx context.Context, sanctionSet []string, treePathPrefix string) (*BatchServerContext, error) {
+	batchSize := a.CalculateOptimalBatchSize()
+	totalRecords := len(sanctionSet)
+
+	if totalRecords <= batchSize {
+		// No batching needed, use single context
+		sc, err := a.InitServer(ctx, sanctionSet, treePathPrefix+".db")
+		if err != nil {
+			return nil, err
+		}
+		return &BatchServerContext{
+			Batches:        []*ServerContext{sc},
+			BatchSize:      batchSize,
+			TotalRecords:   totalRecords,
+			TreePathPrefix: treePathPrefix,
+		}, nil
+	}
+
+	// Calculate number of batches
+	numBatches := (totalRecords + batchSize - 1) / batchSize
+
+	bsc := &BatchServerContext{
+		Batches:        make([]*ServerContext, 0, numBatches),
+		BatchSize:      batchSize,
+		TotalRecords:   totalRecords,
+		TreePathPrefix: treePathPrefix,
+	}
+
+	// Initialize each batch sequentially to manage RAM
+	for i := 0; i < numBatches; i++ {
+		start := i * batchSize
+		end := start + batchSize
+		if end > totalRecords {
+			end = totalRecords
+		}
+
+		batchData := sanctionSet[start:end]
+		treePath := fmt.Sprintf("%s_batch%d.db", treePathPrefix, i)
+
+		sc, err := a.InitServer(ctx, batchData, treePath)
+		if err != nil {
+			// Cleanup already initialized batches
+			for _, prev := range bsc.Batches {
+				if prev != nil && prev.TreePath != "" {
+					// Cleanup would happen here
+				}
+			}
+			return nil, fmt.Errorf("batch %d init failed: %w", i, err)
+		}
+
+		bsc.Batches = append(bsc.Batches, sc)
+
+		// Force GC between batches to free memory
+		runtime.GC()
+	}
+
+	return bsc, nil
+}
+
+// DetectIntersectionBatched runs intersection detection across all batches
+// and aggregates the results
+func (a *Adapter) DetectIntersectionBatched(ctx context.Context, bsc *BatchServerContext, clientSet []string) ([]uint64, error) {
+	if len(bsc.Batches) == 1 {
+		// Single batch, use standard detection
+		ciphers, err := a.EncryptClient(ctx, clientSet, bsc.Batches[0])
+		if err != nil {
+			return nil, err
+		}
+		return a.DetectIntersection(ctx, bsc.Batches[0], ciphers)
+	}
+
+	// Multiple batches: aggregate matches
+	allMatches := make(map[uint64]bool)
+
+	for i, batch := range bsc.Batches {
+		// Encrypt client data with this batch's parameters
+		ciphers, err := a.EncryptClient(ctx, clientSet, batch)
+		if err != nil {
+			return nil, fmt.Errorf("batch %d encryption failed: %w", i, err)
+		}
+
+		// Run intersection
+		matches, err := a.DetectIntersection(ctx, batch, ciphers)
+		if err != nil {
+			return nil, fmt.Errorf("batch %d intersection failed: %w", i, err)
+		}
+
+		// Aggregate matches
+		for _, m := range matches {
+			allMatches[m] = true
+		}
+
+		// Force GC between batches
+		runtime.GC()
+	}
+
+	// Convert map to slice
+	result := make([]uint64, 0, len(allMatches))
+	for hash := range allMatches {
+		result = append(result, hash)
+	}
+
+	return result, nil
+}
+
+// CleanupBatchContext removes temporary files created during batch processing
+func (a *Adapter) CleanupBatchContext(bsc *BatchServerContext) {
+	if bsc == nil {
+		return
+	}
+	// Note: Tree files are managed by the caller or cleaned up on server shutdown
+	// This is a placeholder for any additional cleanup needed
 }

@@ -24,6 +24,14 @@ import {
   type SanctionList,
   clearAccessToken,
 } from "@/lib/api-client";
+import { LogTerminal } from "@/components/log-terminal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Types for our data
 type ScreeningStatus =
@@ -52,6 +60,13 @@ export default function ScreeningPage() {
   const [selectedSanctionListId, setSelectedSanctionListId] =
     useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({
+    name: "",
+    dob: "",
+    country: "",
+  });
+  const [showMapping, setShowMapping] = useState(false);
 
   // Check backend connectivity and fetch lists on mount
   useEffect(() => {
@@ -93,6 +108,33 @@ export default function ScreeningPage() {
       // But we can also show a message if it's not auth related.
     }
   };
+
+  // Fetch headers when customer list changes
+  useEffect(() => {
+    if (selectedCustomerListId) {
+      apiClient.getCustomerListHeaders(selectedCustomerListId)
+        .then(headers => {
+          setCsvHeaders(headers);
+          // Auto-map if possible
+          const newMapping = { ...columnMapping };
+          headers.forEach(h => {
+            const lower = h.toLowerCase().trim();
+            if (lower.includes("name") && !newMapping.name) newMapping.name = h;
+            if (lower.includes("dob") || lower.includes("birth")) newMapping.dob = h;
+            if (lower.includes("country") || lower.includes("nation")) newMapping.country = h;
+          });
+          setColumnMapping(newMapping);
+          setShowMapping(true);
+        })
+        .catch(err => {
+          console.error("Failed to fetch headers", err);
+          setShowMapping(false);
+        });
+    } else {
+      setCsvHeaders([]);
+      setShowMapping(false);
+    }
+  }, [selectedCustomerListId]);
 
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -163,6 +205,7 @@ export default function ScreeningPage() {
         name: `Screening ${cList?.name}`,
         customerListId: parseInt(selectedCustomerListId),
         sanctionListIds: [parseInt(selectedSanctionListId)],
+        columnMapping: showMapping ? columnMapping : undefined,
       });
 
       addLog(`Job created: ${response.jobId}`);
@@ -203,6 +246,8 @@ export default function ScreeningPage() {
         },
         () => {
           addLog("Screening complete");
+          setStatus("complete");
+          setProgress(100);
         }
       );
 
@@ -257,6 +302,8 @@ export default function ScreeningPage() {
         </div>
       )}
 
+
+
       <div className="grid gap-8 md:grid-cols-3">
         {/* Configuration Panel */}
         <Card className="md:col-span-1 h-fit">
@@ -269,19 +316,23 @@ export default function ScreeningPage() {
               <label className="text-sm font-medium">
                 Client Dataset (Customers)
               </label>
-              <select
-                className="w-full rounded-md border border-slate-300 p-2 text-sm"
+              <Select
                 value={selectedCustomerListId}
-                onChange={(e) => setSelectedCustomerListId(e.target.value)}
+                onValueChange={setSelectedCustomerListId}
                 disabled={status !== "idle" || isUploading}
               >
-                <option value="">Select a list...</option>
-                {customerLists.map((list) => (
-                  <option key={list.id} value={list.id}>
-                    {list.name} ({list.recordCount} recs)
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a list..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {customerLists.map((list) => (
+                    <SelectItem key={list.id} value={list.id.toString()}>
+                      {list.name} ({list.recordCount} recs)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
               <div className="relative">
                 <input
                   type="file"
@@ -310,40 +361,123 @@ export default function ScreeningPage() {
               </div>
             </div>
 
+            {/* Column Mapping Section */}
+            {showMapping && (
+              <div className="space-y-3 pt-2 border-t">
+                <div>
+                  <h3 className="text-sm font-medium">Column Mapping</h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Select which CSV column provides data for each matching field.
+                    Set to &quot;Ignore&quot; to exclude a field from matching.
+                  </p>
+                </div>
+                <div className="grid gap-3">
+                  {/* Name Field */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-600">Match on Name using:</label>
+                    <Select
+                      value={columnMapping.name || "_ignore"}
+                      onValueChange={(val) => setColumnMapping(prev => ({ ...prev, name: val === "_ignore" ? "" : val }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select CSV column" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_ignore">⊘ Ignore (don&apos;t use)</SelectItem>
+                        {csvHeaders.map(h => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* DOB Field */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-600">Match on DOB using:</label>
+                    <Select
+                      value={columnMapping.dob || "_ignore"}
+                      onValueChange={(val) => setColumnMapping(prev => ({ ...prev, dob: val === "_ignore" ? "" : val }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select CSV column" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_ignore">⊘ Ignore (don&apos;t use)</SelectItem>
+                        {csvHeaders.map(h => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Country Field */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-600">Match on Country using:</label>
+                    <Select
+                      value={columnMapping.country || "_ignore"}
+                      onValueChange={(val) => setColumnMapping(prev => ({ ...prev, country: val === "_ignore" ? "" : val }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select CSV column" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_ignore">⊘ Ignore (don&apos;t use)</SelectItem>
+                        {csvHeaders.map(h => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Server Data Selection */}
             <div className="space-y-2">
               <label className="text-sm font-medium">
                 Server Dataset (Sanctions)
               </label>
-              <select
-                className="w-full rounded-md border border-slate-300 p-2 text-sm"
+              <Select
                 value={selectedSanctionListId}
-                onChange={(e) => setSelectedSanctionListId(e.target.value)}
+                onValueChange={setSelectedSanctionListId}
                 disabled={status !== "idle" || isUploading}
               >
-                <option value="">Select a list...</option>
-                {sanctionLists.map((list) => (
-                  <option key={list.id} value={list.id}>
-                    {list.name} ({list.recordCount} recs)
-                  </option>
-                ))}
-              </select>
-
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a list..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {sanctionLists.map((list) => (
+                    <SelectItem key={list.id} value={list.id.toString()}>
+                      {list.name} ({list.recordCount} recs)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* Show selected sanctions count */}
+              {selectedSanctionListId && (
+                <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-md">
+                  <Database className="h-3.5 w-3.5" />
+                  <span>
+                    <strong className="text-slate-700">
+                      {sanctionLists.find(l => l.id.toString() === selectedSanctionListId)?.recordCount || 0}
+                    </strong>
+                    {" "}sanctions records will be matched against
+                  </span>
+                </div>
+              )}
             </div>
 
             <Button
               className="w-full"
               onClick={startScreening}
               disabled={
-                status !== "idle" ||
+                (status !== "idle" && status !== "complete" && status !== "failed") ||
                 !selectedCustomerListId ||
                 !selectedSanctionListId ||
                 isUploading
               }
             >
-              {status === "idle" ? (
+              {status === "idle" || status === "complete" || status === "failed" ? (
                 <>
-                  <Play className="mr-2 h-4 w-4" /> Start Screening
+                  <Play className="mr-2 h-4 w-4" /> {status === "idle" ? "Start Screening" : "Start New Screening"}
                 </>
               ) : (
                 <>
@@ -416,64 +550,43 @@ export default function ScreeningPage() {
               />
             </div>
 
-            {/* Terminal/Logs Area */}
-            <div className="bg-slate-950 text-slate-50 rounded-md p-4 font-mono text-xs h-64 overflow-y-auto shadow-inner">
-              {logs.length === 0 ? (
-                <span className="text-slate-500">
-                  {"// Ready for execution..."}
-                </span>
-              ) : (
-                logs.map((log, i) => (
-                  <div key={i} className="mb-1">
-                    <span className="text-green-400">➜</span> {log}
-                  </div>
-                ))
-              )}
-              {status === "complete" && (
-                <div className="mt-2 text-green-400 font-bold">DONE.</div>
-              )}
-            </div>
 
-            {/* Metrics Grid */}
+            {/* Metrics Grid - Improved Design */}
             {status !== "idle" && (
               <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t">
-                <div className="text-center">
-                  <div className="text-xs text-slate-500 uppercase">
+                <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
+                  <div className="text-xs text-blue-600 uppercase font-semibold mb-2">
                     Throughput
                   </div>
-                  <div className="text-lg font-bold">
-                    {metrics["throughput"] || "0"}{" "}
-                    <span className="text-xs font-normal text-slate-400">
-                      rec/s
-                    </span>
+                  <div className="text-2xl font-bold text-blue-900">
+                    {metrics["throughput"] || "0"}
                   </div>
+                  <div className="text-xs text-blue-500 mt-1">rec/s</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-xs text-slate-500 uppercase">
+                <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border border-purple-100">
+                  <div className="text-xs text-purple-600 uppercase font-semibold mb-2">
                     Memory Usage
                   </div>
-                  <div className="text-lg font-bold">
-                    {metrics["memory"] || "0"}{" "}
-                    <span className="text-xs font-normal text-slate-400">
-                      MB
-                    </span>
+                  <div className="text-2xl font-bold text-purple-900">
+                    {metrics["memory"] || "0"}
                   </div>
+                  <div className="text-xs text-purple-500 mt-1">MB</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-xs text-slate-500 uppercase">
+                <div className="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-100">
+                  <div className="text-xs text-green-600 uppercase font-semibold mb-2">
                     CPU Load
                   </div>
-                  <div className="text-lg font-bold">
-                    {metrics["cpu"] || "0"}{" "}
-                    <span className="text-xs font-normal text-slate-400">
-                      %
-                    </span>
+                  <div className="text-2xl font-bold text-green-900">
+                    {metrics["cpu"] || "0"}
                   </div>
+                  <div className="text-xs text-green-500 mt-1">%</div>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
+        
+        <LogTerminal />
       </div>
     </div>
   );

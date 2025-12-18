@@ -39,7 +39,6 @@ export default function SettingsPage() {
 
   const handleSave = () => {
     // In a real app, this would call an API
-    console.log("Saving settings:", settings);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
